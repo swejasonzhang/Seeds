@@ -1,0 +1,33 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# One Node web service serves both the API and the built React app (one URL, no CORS).
+#
+# Database: Render has no managed MongoDB. Use MongoDB Atlas (pick Azure → East US 2 to stay in Microsoft's cloud,
+# near Render's Virginia region) or Azure Cosmos DB for MongoDB (vCore), and paste the connection string into
+# MONGODB_URI when Render prompts for it.
+services:
+  - type: web
+    name: seeds-intake
+    runtime: node # version from .node-version
+    plan: free # sleeps after ~15 min idle; use "starter" or higher for always-on + horizontal scaling
+    region: virginia # closest Render region to Long Island
+    branch: main
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /readyz # only routes traffic to an instance once MongoDB is connected
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false # secret: entered in the Render dashboard, never committed
+      - key: AUTH_MODE
+        value: demo # FICTIONAL DATA ONLY. Switch to "entra" (+ ENTRA_* vars) before any real family uses it.
+      - key: SEED_DEMO_DATA
+        value: "true" # seeds fictional data once, only if the database is empty
+      - key: PRACTICE_TIME_ZONE
+        value: America/New_York
+      # Optional Microsoft integrations; add in the dashboard when ready (see README):
+      #   AZURE_MAPS_KEY                         real drive times + rooftop geocoding
+      #   APPLICATIONINSIGHTS_CONNECTION_STRING  telemetry
+      #   ENTRA_TENANT_ID / ENTRA_API_AUDIENCE / ENTRA_API_CLIENT_ID / ENTRA_SPA_CLIENT_ID / ENTRA_API_SCOPE
+      #   GRAPH_CALENDAR_SYNC=true + GRAPH_CLIENT_ID / GRAPH_CLIENT_SECRET   Outlook calendar sync

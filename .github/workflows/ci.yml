@@ -1,0 +1,77 @@
+# CI: typecheck, unit tests, production build, then a smoke test of the built server against a real MongoDB.
+# CD: Render deploys `main` only after these checks pass (render.yaml → autoDeployTrigger: checksPass).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build, test & smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      mongo:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --quiet --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Typecheck (server + web)
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Smoke test the production bundle
+        working-directory: server
+        env:
+          NODE_ENV: production
+          AUTH_MODE: demo
+          SEED_DEMO_DATA: 'true'
+          PORT: '5080'
+          MONGODB_URI: mongodb://localhost:27017/seeds_ci
+        run: |
+          node dist/server.cjs > ../server.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf localhost:5080/readyz >/dev/null && break; sleep 1; done
+          curl -sf localhost:5080/readyz
+          # wait for the one-time demo seed
+          for i in $(seq 1 30); do curl -sf localhost:5080/api/queue/counts | grep -q '"ready"' && break; sleep 1; done
+          curl -sf localhost:5080/api/queue/counts | grep -q '"ready"'
+          curl -sf localhost:5080/ | grep -q 'id="root"'
+          curl -sfI localhost:5080/ | grep -qi 'x-robots-tag' || echo "note: X-Robots-Tag header not present in this build"
+          curl -sf -X POST localhost:5080/api/intake -H 'content-type: application/json' --data @../scripts/smoke-intake.json | grep -q submissionCode
+          echo "Smoke test passed"
+
+      - name: Server log
+        if: always()
+        run: cat server.log || true

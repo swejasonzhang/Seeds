@@ -14,7 +14,7 @@ services:
     buildCommand: npm ci --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /readyz # only routes traffic to an instance once MongoDB is connected
-    autoDeploy: true
+    autoDeployTrigger: checksPass # CD: deploy main only after GitHub Actions CI is green
     envVars:
       - key: NODE_ENV
         value: production

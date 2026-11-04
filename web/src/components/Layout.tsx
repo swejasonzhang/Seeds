@@ -1,5 +1,5 @@
-import { useState, type ReactNode } from 'react';
-import { Link, Navigate, NavLink, Outlet, useNavigate } from 'react-router';
+import { Suspense, useState, type ReactNode } from 'react';
+import { Link, Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import {
   CalendarClockRegular,
   CalendarLtrRegular,
@@ -15,7 +15,15 @@ import {
 } from '@fluentui/react-icons';
 import { useQueueCounts } from '../api';
 import { setPersona, usePersona, type Persona } from '../session';
+
+export async function signOutEverywhere(nav: (to: string) => void) {
+  const { msalEnabled, msalAccount, signOut } = await import('../msal');
+  if (msalEnabled() && msalAccount()) return signOut();
+  setPersona(null);
+  nav('/');
+}
 import { ConceptNotice, Wordmark } from './ui';
+import { PageSkeleton } from './motion';
 import { Avatar, Button, Sheet } from './kit';
 
 interface NavItem {
@@ -65,12 +73,12 @@ function UserCard({ persona, role }: { persona: Persona; role: string }) {
         <Avatar name={persona.name} size="sm" tone="olive" />
         <div className="min-w-0 leading-tight">
           <p className="truncate text-sm font-bold text-white">{persona.name}</p>
-          <p className="text-xs text-seed-300">{role} · demo</p>
+          <p className="text-xs text-seed-300">{role} · {persona.key === 'microsoft' ? 'Microsoft account' : 'demo'}</p>
         </div>
       </div>
       <div className="mt-3 flex gap-2">
         <button type="button" onClick={() => nav('/sign-in')} className="flex-1 rounded-lg bg-white/10 px-2 py-1.5 text-xs font-bold text-seed-100 hover:bg-white/15">Switch</button>
-        <button type="button" onClick={() => { setPersona(null); nav('/'); }} className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold text-seed-200 hover:bg-white/10" aria-label="Sign out">
+        <button type="button" onClick={() => void signOutEverywhere(nav)} className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs font-bold text-seed-200 hover:bg-white/10" aria-label="Sign out">
           <SignOutRegular /> Sign out
         </button>
       </div>
@@ -81,17 +89,17 @@ function UserCard({ persona, role }: { persona: Persona; role: string }) {
 function PortalShell({ label, home, items, persona, role }: { label: string; home: string; items: NavItem[]; persona: Persona; role: string }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="min-h-screen">
-      <ConceptNotice tone="dark" />
+    <div className="min-h-svh">
       <div className="flex">
-        <aside className="sticky top-0 hidden h-screen w-64 shrink-0 flex-col bg-seed-950 lg:flex">
+        <aside className="sticky top-0 hidden h-svh w-64 shrink-0 flex-col overflow-y-auto bg-seed-950 lg:flex">
           <Link to={home} className="px-6 pb-2 pt-6"><Wordmark light /></Link>
           <p className="eyebrow px-6 pb-4 text-seed-300">{label}</p>
           <NavItems items={items} />
           <div className="mt-auto"><UserCard persona={persona} role={role} /></div>
         </aside>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between bg-seed-950 px-4 py-3 lg:hidden">
+          <ConceptNotice tone="dark" />
+          <div className="sticky top-0 z-30 flex items-center justify-between bg-seed-950 px-4 py-3 lg:hidden">
             <Wordmark light compact />
             <Button variant="ghost" size="icon" className="text-white hover:bg-white/10 hover:text-white" aria-label="Open menu" onClick={() => setOpen(true)}>
               <NavigationRegular />
@@ -108,7 +116,11 @@ function PortalShell({ label, home, items, persona, role }: { label: string; hom
             <div className="mt-auto"><UserCard persona={persona} role={role} /></div>
           </Sheet>
           <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-8 sm:py-8">
-            <Outlet />
+            <Suspense fallback={<PageSkeleton />}>
+              <div key={useLocation().pathname} className="page-enter">
+                <Outlet />
+              </div>
+            </Suspense>
           </main>
         </div>
       </div>

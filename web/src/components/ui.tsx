@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { Skeleton, Tip } from './kit';
+import { Skeleton, Tip, cn } from './kit';
+import { CountUp } from './motion';
 import { InfoRegular, WarningRegular } from '@fluentui/react-icons';
 import { PRACTICE } from '../site/practice';
 
@@ -31,9 +32,12 @@ export function Wordmark({ light = false, compact = false }: { light?: boolean; 
 export function ConceptNotice({ tone = 'light' }: { tone?: 'light' | 'dark' }) {
   return (
     <div className={tone === 'dark' ? 'bg-seed-950 text-seed-100' : 'bg-clay-50 text-clay-700'}>
-      <p className="mx-auto flex max-w-7xl items-center justify-center gap-2 px-4 py-1.5 text-center text-xs font-semibold">
+      <p className="mx-auto flex max-w-7xl items-center justify-center gap-2 px-4 py-1.5 text-center text-[11px] font-semibold sm:text-xs">
         <InfoRegular className="shrink-0" />
-        <span>
+        <span className="sm:hidden">
+          Unofficial concept · demo data · services: <a href={PRACTICE.phoneHref} className="underline underline-offset-2">{PRACTICE.phone}</a>
+        </span>
+        <span className="hidden sm:inline">
           Unofficial concept redesign, not affiliated with {PRACTICE.name}. Demo data only. To request services, call the office at{' '}
           <a href={PRACTICE.phoneHref} className="underline underline-offset-2">{PRACTICE.phone}</a>.
         </span>
@@ -61,12 +65,12 @@ type Status = 'neutral' | 'critical' | 'warning';
 export function StatTile({ label, value, context, status = 'neutral', icon }: { label: string; value: ReactNode; context?: ReactNode; status?: Status; icon?: ReactNode }) {
   const statusIcon = status === 'critical' ? <WarningRegular className="text-red-700" /> : status === 'warning' ? <WarningRegular className="text-amber-700" /> : icon;
   return (
-    <div className="card card-pad flex flex-col gap-1">
+    <div className="card card-pad lift flex flex-col gap-1">
       <div className="flex items-center gap-1.5 text-sm font-semibold text-ink-500">
         {statusIcon && <span className="text-base">{statusIcon}</span>}
         {label}
       </div>
-      <div className="text-3xl font-bold text-ink-900">{value}</div>
+      <div className="text-3xl font-bold text-ink-900">{typeof value === 'number' ? <CountUp value={value} /> : value}</div>
       {context && <div className="text-xs text-ink-500">{context}</div>}
     </div>
   );
@@ -93,7 +97,7 @@ export function Meter({ value, max, label, size = 'md', kind = 'capacity' }: { v
         tabIndex={0}
         className={`focus-ring w-full overflow-hidden rounded-full ${track} ${size === 'sm' ? 'h-1.5' : 'h-2.5'}`}
       >
-        <div className={`h-full rounded-full ${fill} transition-[width] duration-500`} style={{ width: `${ratio * 100}%` }} />
+        <div className={cn('h-full origin-left animate-grow-x rounded-full transition-[width] duration-700', fill)} style={{ width: `${ratio * 100}%` }} />
       </div>
     </Tip>
   );

@@ -17,7 +17,8 @@ import {
 } from '@fluentui/react-icons';
 import { DISCIPLINE_LABEL, DOCUMENT_KINDS, DOCUMENT_LABEL, FUNDING_LABEL, SETTING_LABEL, type DocumentKind, type FamilyCaseDto, type JourneyStepDto } from '@seeds/shared';
 import { errorMessage, openDocument, useFamilyActions, useFamilyPortal } from '../api';
-import { setPersona, usePersona } from '../session';
+import { usePersona } from '../session';
+import { signOutEverywhere } from '../components/Layout';
 import { useNotify } from '../toast';
 import { ConceptNotice, Wordmark } from '../components/ui';
 import { JourneyProgress, JourneyView } from '../components/Journey';
@@ -28,7 +29,7 @@ export function FamilyPortal() {
   const persona = usePersona();
   const nav = useNavigate();
   const portal = useFamilyPortal();
-  if (persona?.kind !== 'parent') return <Navigate to="/sign-in?as=parent" replace />;
+  if (persona?.kind !== 'parent' || persona.key === 'microsoft-unlinked') return <Navigate to="/sign-in?as=parent" replace />;
 
   return (
     <div className="min-h-screen bg-cream-100">
@@ -48,7 +49,7 @@ export function FamilyPortal() {
               }
             >
               <MenuItem onSelect={() => nav('/sign-in')}>Switch account</MenuItem>
-              <MenuItem icon={<SignOutRegular />} onSelect={() => { setPersona(null); nav('/'); }}>Sign out</MenuItem>
+              <MenuItem icon={<SignOutRegular />} onSelect={() => void signOutEverywhere(nav)}>Sign out</MenuItem>
             </Menu>
           </div>
         </div>
@@ -62,7 +63,7 @@ export function FamilyPortal() {
             <p className="eyebrow mb-2">Welcome back</p>
             <h1 className="text-3xl font-black tracking-tight text-seed-950 sm:text-4xl">Hi {portal.data.guardianName.split(' ')[0]}.</h1>
             <p className="mt-2 max-w-2xl text-ink-500">Here’s where things stand. Items marked <strong className="text-clay-700">Needed to schedule</strong> are what stand between your child and their first session.</p>
-            <div className="mt-8 space-y-10">
+            <div className="mt-8 space-y-12">
               {portal.data.children.map((child) => (
                 <ChildSection key={child.id} child={child} />
               ))}
@@ -78,7 +79,7 @@ function ChildSection({ child }: { child: { id: string; firstName: string; lastN
   const [selected, setSelected] = useState(child.cases[0]?.id);
   const current = child.cases.find((c) => c.id === selected) ?? child.cases[0];
   return (
-    <section>
+    <section className="animate-rise">
       <div className="mb-4 flex flex-wrap items-center gap-4">
         <Avatar name={`${child.firstName} ${child.lastName}`} size="lg" tone="dark" />
         <div>
@@ -157,8 +158,10 @@ function CaseView({ c }: { c: FamilyCaseDto }) {
       <ol className="grid grid-cols-4 gap-2">
         {STAGES.map((label, i) => (
           <li key={label} className="flex flex-col gap-2">
-            <span className={`h-1.5 rounded-full ${i < stage ? 'bg-seed-500' : i === stage ? 'bg-clay-300' : 'bg-cream-300'}`} />
-            <span className={`text-xs font-bold ${i <= stage ? 'text-ink-900' : 'text-ink-500'}`}>
+            <span className="h-1.5 overflow-hidden rounded-full bg-cream-300">
+              <span className={`block h-full origin-left animate-grow-x rounded-full ${i < stage ? 'bg-seed-500' : i === stage ? 'bg-clay-300' : 'bg-transparent'}`} style={{ animationDelay: `${i * 160}ms` }} />
+            </span>
+            <span className={`text-[11px] font-bold leading-tight sm:text-xs ${i <= stage ? 'text-ink-900' : 'text-ink-500'}`}>
               {i < stage && <CheckmarkCircleRegular className="mr-1 text-seed-500" />}
               {label}
             </span>
@@ -167,8 +170,8 @@ function CaseView({ c }: { c: FamilyCaseDto }) {
       </ol>
       <StatusHero c={c} />
 
-      <div className="grid gap-5 lg:grid-cols-[1.5fr_1fr]">
-        <div className="card card-pad">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+        <div className="scroll-in card card-pad min-w-0">
           <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h3 className="text-lg font-extrabold text-seed-950">Your checklist</h3>
@@ -181,8 +184,8 @@ function CaseView({ c }: { c: FamilyCaseDto }) {
           </div>
         </div>
 
-        <div className="space-y-5">
-          <div className="card card-pad">
+        <div className="min-w-0 space-y-5">
+          <div className="scroll-in card card-pad">
             <h3 className="mb-3 text-lg font-extrabold text-seed-950">Sessions</h3>
             {c.sessions.length === 0 ? (
               <p className="text-sm text-ink-500">Once your child is matched, their therapist and weekly time will appear here.</p>
@@ -212,7 +215,7 @@ function CaseView({ c }: { c: FamilyCaseDto }) {
 
           <DocumentsCard c={c} onUpload={(kind, file) => run(actions.upload.mutateAsync({ caseId: c.id, kind, file }), `${file.name} uploaded`)} busy={actions.upload.isPending} />
 
-          <div className="card card-pad bg-seed-950! text-cream-50">
+          <div className="scroll-in card card-pad bg-seed-950! text-cream-50">
             <h3 className="font-extrabold">Questions?</h3>
             <p className="mt-1 text-sm text-seed-200">Our front desk is here Mon–Thu 8:30–7, Fri 8:30–3:30.</p>
             <div className="mt-3 flex flex-col gap-1.5 text-sm">
@@ -229,7 +232,7 @@ function CaseView({ c }: { c: FamilyCaseDto }) {
 function DocumentsCard({ c, onUpload, busy }: { c: FamilyCaseDto; onUpload: (kind: DocumentKind, file: File) => void; busy: boolean }) {
   const [kind, setKind] = useState<DocumentKind>('other');
   return (
-    <div className="card card-pad">
+    <div className="scroll-in card card-pad">
       <h3 className="mb-3 text-lg font-extrabold text-seed-950">Documents</h3>
       {c.documents.length === 0 ? (
         <p className="mb-3 text-sm text-ink-500">Nothing uploaded yet.</p>

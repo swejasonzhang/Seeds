@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router';
 import { CallRegular, ClockRegular, DismissRegular, LocationRegular, MailRegular, NavigationRegular, PrintRegular } from '@fluentui/react-icons';
 import { PRACTICE } from '../site/practice';
 import { ConceptNotice, Wordmark } from './ui';
-import { Button } from './kit';
+import { PageSkeleton } from './motion';
+import { Button, cn } from './kit';
 
 const LINKS = [
   { to: '/#services', label: 'Services' },
@@ -36,7 +37,7 @@ export function CtaLink({ to = '/intake', children, variant = 'primary', classNa
     light: 'bg-cream-50 text-seed-950 hover:bg-white',
   }[variant];
   return (
-    <Link to={to} className={`focus-ring inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-colors ${styles} ${className}`}>
+    <Link to={to} className={cn('focus-ring inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-bold transition-colors', styles, className)}>
       {children}
     </Link>
   );
@@ -85,7 +86,11 @@ export function SiteLayout() {
       </header>
 
       <main className="flex-1">
-        <Outlet />
+        <Suspense fallback={<PageSkeleton variant="site" />}>
+          <div key={useLocation().pathname} className="page-enter">
+            <Outlet />
+          </div>
+        </Suspense>
       </main>
 
       <footer className="bg-seed-950 text-seed-100">

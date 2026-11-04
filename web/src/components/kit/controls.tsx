@@ -45,7 +45,7 @@ export function Select<T extends string>({
           className,
         )}
       >
-        <span className="truncate"><SelectPrimitive.Value placeholder={placeholder} /></span>
+        <span className="min-w-0 flex-1 truncate"><SelectPrimitive.Value placeholder={placeholder} /></span>
         <SelectPrimitive.Icon className="text-ink-500"><ChevronDownRegular /></SelectPrimitive.Icon>
       </SelectPrimitive.Trigger>
       <SelectPrimitive.Portal>
@@ -120,14 +120,14 @@ export const Tabs = TabsPrimitive.Root;
 export const TabsContent = TabsPrimitive.Content;
 
 export function TabsList({ children, className }: { children: ReactNode; className?: string }) {
-  return <TabsPrimitive.List className={cn('inline-flex flex-wrap items-center gap-1 rounded-xl bg-cream-200/70 p-1', className)}>{children}</TabsPrimitive.List>;
+  return <TabsPrimitive.List className={cn('inline-flex max-w-full flex-wrap items-center gap-1 rounded-xl bg-cream-200/70 p-1', className)}>{children}</TabsPrimitive.List>;
 }
 
 export function TabsTrigger({ value, children, count }: { value: string; children: ReactNode; count?: number }) {
   return (
     <TabsPrimitive.Trigger
       value={value}
-      className="group inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-bold text-ink-500 outline-none transition hover:text-seed-950 focus-visible:ring-4 focus-visible:ring-seed-500/20 data-[state=active]:bg-white data-[state=active]:text-seed-950 data-[state=active]:shadow-card"
+      className="group inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-bold text-ink-500 outline-none transition hover:text-seed-950 focus-visible:ring-4 focus-visible:ring-seed-500/20 data-[state=active]:bg-white data-[state=active]:text-seed-950 data-[state=active]:shadow-card"
     >
       {children}
       {count !== undefined && (

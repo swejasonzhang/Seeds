@@ -52,7 +52,7 @@ export function JourneyView({ journey, mode, handlers = {} }: { journey: Journey
               <h3 className="text-xs font-extrabold uppercase tracking-[0.14em] text-ink-500">{phase.title}</h3>
               <span className="text-xs font-semibold text-ink-500">{done}/{phase.steps.length}</span>
             </div>
-            <ol className="relative space-y-2 before:absolute before:bottom-6 before:left-[22px] before:top-6 before:w-0.5 before:bg-cream-200">
+            <ol className="relative space-y-2 before:absolute before:bottom-8 before:left-[33px] before:top-8 before:w-0.5 before:rounded-full before:bg-cream-200">
               {phase.steps.map((step) => <StepRow key={step.id} step={step} mode={mode} handlers={handlers} />)}
             </ol>
           </section>
@@ -63,7 +63,7 @@ export function JourneyView({ journey, mode, handlers = {} }: { journey: Journey
 }
 
 function StatusIcon({ step }: { step: JourneyStepDto }) {
-  if (step.status === 'done') return <CheckmarkCircle24Filled className="text-seed-500" aria-label="Done" />;
+  if (step.status === 'done') return <CheckmarkCircle24Filled className="animate-check text-seed-500" aria-label="Done" />;
   if (step.status === 'waiting') return <HourglassHalfRegular className="text-amber-700" aria-label="Waiting on others" />;
   return <CircleRegular className="text-clay-500" aria-label="To do" />;
 }
@@ -109,35 +109,39 @@ function StepRow({ step, mode, handlers }: { step: JourneyStepDto; mode: Mode; h
   }
 
   return (
-    <li className={cn('relative flex flex-wrap items-center gap-3 rounded-2xl border p-3 pr-4 transition sm:flex-nowrap', done ? 'border-transparent' : step.status === 'todo' ? 'border-clay-200 bg-white shadow-card' : 'border-cream-200 bg-white')}>
-      <span className="relative z-10 grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-2xl">
+    <li className={cn('scroll-in relative flex gap-3 rounded-2xl border px-3 transition sm:pr-4', done ? 'border-transparent py-1' : step.status === 'todo' ? 'border-clay-200 bg-white py-3 shadow-card' : 'border-cream-200 bg-white py-3')}>
+      <span className="relative z-10 grid h-11 w-11 shrink-0 place-items-center rounded-full bg-white text-2xl ring-4 ring-white">
         <StatusIcon step={step} />
       </span>
-      <div className="min-w-0 flex-1 py-0.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className={cn('font-bold', done ? 'text-ink-500' : 'text-ink-900')}>{step.title}</p>
-          {step.optional && <span className="rounded-full bg-cream-200 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-ink-500">Optional</span>}
-          {!done && step.required && <span className="rounded-full bg-clay-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-clay-700 ring-1 ring-clay-200">Needed to schedule</span>}
+      <div className={cn('flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:gap-4', done ? 'py-1' : 'py-1.5')}>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <p className={cn('font-bold leading-snug', done ? 'text-ink-500' : 'text-ink-900')}>{step.title}</p>
+            {step.optional && <span className="rounded-full bg-cream-200 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-ink-500">Optional</span>}
+            {!done && step.required && <span className="rounded-full bg-clay-50 px-2 py-0.5 text-[10px] font-black uppercase tracking-wide text-clay-700 ring-1 ring-clay-200">Needed to schedule</span>}
+          </div>
+          {!done && <p className="mt-1 text-sm leading-relaxed text-ink-500">{step.description}</p>}
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-500">
+            {done ? (
+              <>
+                <span className="inline-flex items-center gap-1">
+                  <CheckmarkRegular className="shrink-0" /> {step.completedBy ? `Done by ${step.completedBy.replace(' (parent)', '')}` : 'Done'}
+                </span>
+                {step.completedAt && <span>{formatDate(step.completedAt)}</span>}
+              </>
+            ) : (
+              <span className="font-bold">{step.status === 'waiting' ? 'Waiting on' : 'With'}: {OWNER_LABEL[step.owner]}</span>
+            )}
+            {!done && step.timeline && (
+              <Tip content="Typical New York State timeline. Confirm dates with your district.">
+                <span tabIndex={0} className="inline-flex cursor-help items-center gap-1 underline decoration-dotted underline-offset-2"><ClockRegular className="shrink-0" /> {step.timeline}</span>
+              </Tip>
+            )}
+            {step.documentKind && !done && <span className="inline-flex items-center gap-1"><DocumentRegular className="shrink-0" /> PDF or photo</span>}
+          </div>
         </div>
-        {!done && <p className="mt-0.5 text-sm text-ink-500">{step.description}</p>}
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-500">
-          {done ? (
-            <span className="flex items-center gap-1">
-              <CheckmarkRegular /> {step.completedBy ? `Done by ${step.completedBy}` : 'Done'}
-              {step.completedAt ? ` · ${formatDate(step.completedAt)}` : ''}
-            </span>
-          ) : (
-            <span className="font-bold">{step.status === 'waiting' ? 'Waiting on' : 'With'}: {OWNER_LABEL[step.owner]}</span>
-          )}
-          {!done && step.timeline && (
-            <Tip content="Typical New York State timeline. Confirm dates with your district.">
-              <span tabIndex={0} className="flex cursor-help items-center gap-1 underline decoration-dotted underline-offset-2"><ClockRegular /> {step.timeline}</span>
-            </Tip>
-          )}
-          {step.documentKind && !done && <span className="flex items-center gap-1"><DocumentRegular /> PDF or photo</span>}
-        </div>
+        {action && <div className="shrink-0 [&>button]:w-full sm:[&>button]:w-auto">{action}</div>}
       </div>
-      {action && <div className="ml-14 shrink-0 sm:ml-0">{action}</div>}
 
       {signing && <SignDialog step={step} onClose={() => setSigning(false)} onSign={(name) => handlers.onSign!(step, name)} />}
       {confirming && <ConfirmDialog step={step} onClose={() => setConfirming(false)} onConfirm={(note) => handlers.onConfirm!(step, note)} />}

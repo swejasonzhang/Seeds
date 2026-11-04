@@ -1,7 +1,9 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router';
 import {
   ArrowLeftRegular,
+  ArrowResetRegular,
+  CloudCheckmarkRegular,
   ArrowRightRegular,
   BackpackRegular,
   BuildingRegular,
@@ -33,7 +35,7 @@ import {
 } from '@seeds/shared';
 import { ApiRequestError, errorMessage, usePublicConfig, useSubmitIntake } from '../api';
 import { ConceptNotice, Wordmark } from '../components/ui';
-import { Alert, BirthDatePicker, Button, Checkbox, Field, Input, Select, Textarea, cn } from '../components/kit';
+import { Alert, BirthDatePicker, Button, Checkbox, Field, Input, Select, Textarea, cn, formatLong, toast } from '../components/kit';
 import { setPersona } from '../session';
 import { INSURANCE, PRACTICE } from '../site/practice';
 
@@ -100,7 +102,7 @@ const EMPTY: FormState = {
 const SAMPLE: FormState = {
   ...EMPTY,
   child: { firstName: 'Maya', lastName: 'Okafor', dateOfBirth: '2023-05-14', preferredLanguage: 'English' },
-  guardian: { firstName: 'Grace', lastName: 'Okafor', relationship: 'Mother', phone: '(516) 555-0188', email: 'grace.okafor@example.com' },
+  guardian: { firstName: 'Grace', lastName: 'Okafor', relationship: 'Mother', phone: '(516) 555-0195', email: 'grace.okafor@example.com' },
   address: { line1: '48 Willis Ave', city: 'Mineola', state: 'NY', postalCode: '11501' },
   services: ['speech'],
   concerns: 'Maya uses about 15 words at 2½ and gets frustrated when we don’t understand her. Her pediatrician suggested an evaluation.',
@@ -147,16 +149,201 @@ function validate(f: FormState): Record<string, string> {
   return out;
 }
 
+// ---------- autosave (this browser only; cleared on submit; expires after 7 days) ----------
+const DRAFT_KEY = 'seeds.intake.draft.v1';
+const DRAFT_TTL_MS = 7 * 24 * 3600 * 1000;
+interface Draft {
+  f: FormState;
+  step: number;
+  visited: number;
+  savedAt: number;
+}
+function loadDraft(): Draft | null {
+  try {
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY) ?? 'null') as Draft | null;
+    if (!d || Date.now() - d.savedAt > DRAFT_TTL_MS) {
+      localStorage.removeItem(DRAFT_KEY);
+      return null;
+    }
+    return { ...d, f: { ...EMPTY, ...d.f } };
+  } catch {
+    return null;
+  }
+}
+const clearDraft = () => localStorage.removeItem(DRAFT_KEY);
+const isEmpty = (f: FormState) => JSON.stringify(f) === JSON.stringify(EMPTY);
+
+function savedLabel(at: number, now: number) {
+  const s = Math.round((now - at) / 1000);
+  if (s < 10) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  return m < 60 ? `${m} min ago` : new Date(at).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+}
+
 const stepOf = (path: string) => STEPS.findIndex((s) => s.prefixes.some((p) => path === p || path.startsWith(`${p}.`)));
 
 export function IntakePage() {
   const config = usePublicConfig();
   const submit = useSubmitIntake();
-  const [f, setF] = useState<FormState>(EMPTY);
-  const [step, setStep] = useState(0);
+  const [initialDraft] = useState(loadDraft);
+  const [f, setF] = useState<FormState>(initialDraft?.f ?? EMPTY);
+  const [step, setStep] = useState(initialDraft?.step ?? 0);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [visited, setVisited] = useState(0);
+  const [visited, setVisited] = useState(initialDraft?.visited ?? 0);
   const [result, setResult] = useState<IntakeResult | null>(null);
+  const [savedAt, setSavedAt] = useState<number | null>(initialDraft?.savedAt ?? null);
+  const [now, setNow] = useState(Date.now());
+  const restoredNotice = useRef(false);
+
+  // Tell the family we brought their answers back.
+  useEffect(() => {
+    if (initialDraft && !restoredNotice.current) {
+      restoredNotice.current = true;
+      toast.success('We restored your saved answers', { description: `Picking up at step ${initialDraft.step + 1}.` });
+    }
+  }, [initialDraft]);
+
+  // Autosave (debounced) whenever the form or position changes.
+  useEffect(() => {
+    if (result || isEmpty(f)) return;
+    const t = setTimeout(() => {
+      const at = Date.now();
+      try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({ f, step, visited, savedAt: at } satisfies Draft));
+        setSavedAt(at);
+      } catch {
+        /* storage full or disabled: the form still works, it just won't survive a reload */
+      }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [f, step, visited, result]);
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // ---------- demo autopilot: types every answer, picks options and walks the steps ----------
+  const [demoStatus, setDemoStatus] = useState<string | null>(null);
+  const [demoDone, setDemoDone] = useState(false);
+  const demoStop = useRef(false);
+
+  const highlight = (name?: string) => {
+    document.querySelectorAll('[data-demo="on"]').forEach((el) => el.removeAttribute('data-demo'));
+    if (!name) return;
+    const el = document.querySelector<HTMLElement>(`[data-field="${name}"]`);
+    if (el) {
+      el.dataset.demo = 'on';
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
+  };
+
+  async function runDemo() {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setF(SAMPLE);
+      setErrors({});
+      setVisited(5);
+      go(5);
+      return;
+    }
+    demoStop.current = false;
+    setDemoDone(false);
+    const wait = (ms: number) => new Promise<void>((resolve, reject) => setTimeout(() => (demoStop.current ? reject(new Error('stopped')) : resolve()), ms));
+    const type = async (name: string, write: (v: string) => void, text: string, speed = 42) => {
+      highlight(name);
+      await wait(260);
+      for (let i = 1; i <= text.length; i++) {
+        write(text.slice(0, i));
+        await wait(speed + Math.random() * 28);
+      }
+      await wait(180);
+    };
+    const pick = async (name: string, apply: () => void, pause = 420) => {
+      highlight(name);
+      await wait(pause);
+      apply();
+      await wait(380);
+    };
+    const toStep = async (n: number, status: string) => {
+      highlight();
+      setDemoStatus(status);
+      await wait(300);
+      go(n);
+      await wait(700);
+    };
+    try {
+      setErrors({});
+      setF(EMPTY);
+      setVisited(0);
+      go(0);
+      setDemoStatus('Typing your child’s details…');
+      await wait(500);
+      await type('child.firstName', (v) => setIn('child', 'firstName', v), SAMPLE.child.firstName);
+      await type('child.lastName', (v) => setIn('child', 'lastName', v), SAMPLE.child.lastName);
+      await pick('child.dateOfBirth', () => setIn('child', 'dateOfBirth', SAMPLE.child.dateOfBirth), 650);
+      await pick('child.preferredLanguage', () => setIn('child', 'preferredLanguage', 'English'));
+
+      await toStep(1, 'Adding the parent and home address…');
+      await type('guardian.firstName', (v) => setIn('guardian', 'firstName', v), SAMPLE.guardian.firstName);
+      await type('guardian.lastName', (v) => setIn('guardian', 'lastName', v), SAMPLE.guardian.lastName);
+      await pick('guardian.relationship', () => setIn('guardian', 'relationship', SAMPLE.guardian.relationship));
+      await type('guardian.phone', (v) => setIn('guardian', 'phone', v), SAMPLE.guardian.phone, 36);
+      await type('guardian.email', (v) => setIn('guardian', 'email', v), SAMPLE.guardian.email, 26);
+      await type('address.line1', (v) => setIn('address', 'line1', v), SAMPLE.address.line1, 34);
+      await type('address.city', (v) => setIn('address', 'city', v), SAMPLE.address.city);
+      await type('address.postalCode', (v) => setIn('address', 'postalCode', v), SAMPLE.address.postalCode, 60);
+
+      await toStep(2, 'Describing what the family has noticed…');
+      await pick('services', () => set('services', ['speech']), 500);
+      await type('concerns', (v) => set('concerns', v), SAMPLE.concerns, 12);
+
+      await toStep(3, 'Choosing the referral and coverage…');
+      await pick('referralSource', () => set('referralSource', SAMPLE.referralSource));
+      await type('referringProvider', (v) => set('referringProvider', v), SAMPLE.referringProvider, 32);
+      await pick('fundingSource', () => set('fundingSource', SAMPLE.fundingSource), 500);
+      await wait(250);
+      await pick('insurance.payer', () => set('plan', SAMPLE.plan));
+      await type('insurance.memberId', (v) => set('memberId', v), SAMPLE.memberId, 55);
+
+      await toStep(4, 'Picking times that work for the family…');
+      await pick('preferredSetting', () => set('preferredSetting', 'home'), 500);
+      set('acceptsTelehealth', true);
+      highlight('availability');
+      await wait(400);
+      for (const band of ['1:afterschool', '2:morning', '3:afterschool', '4:morning', '6:morning']) {
+        setF((p) => ({ ...p, bands: [...p.bands, band] }));
+        await wait(320);
+      }
+
+      await toStep(5, 'Reviewing and signing…');
+      await wait(500);
+      setIn('consent', 'agreed', true);
+      await wait(350);
+      setIn('consent', 'hipaaAcknowledged', true);
+      await wait(350);
+      setIn('consent', 'policyAgreed', true);
+      await type('consent.signatureName', (v) => setIn('consent', 'signatureName', v), `${SAMPLE.guardian.firstName} ${SAMPLE.guardian.lastName}`, 55);
+      highlight();
+      setDemoStatus(null);
+      setDemoDone(true);
+      toast.success('Demo filled in', { description: 'Everything above was typed for you. Press Submit request to send it.' });
+      document.querySelector('[data-submit]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    } catch {
+      highlight();
+      setDemoStatus(null);
+    }
+  }
+
+  const startOver = () => {
+    clearDraft();
+    setF(EMPTY);
+    setStep(0);
+    setVisited(0);
+    setErrors({});
+    setSavedAt(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
   const demo = config.data?.authMode === 'demo';
 
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((p) => ({ ...p, [k]: v }));
@@ -188,19 +375,32 @@ export function IntakePage() {
     setErrors({});
     try {
       setResult(await submit.mutateAsync(toSubmission(f)));
+      clearDraft();
+      setSavedAt(null);
       window.scrollTo({ top: 0 });
     } catch (e) {
       if (e instanceof ApiRequestError && e.body?.issues) setErrors(Object.fromEntries(e.body.issues.map((i) => [i.path, i.message])));
     }
   }
 
-  if (result) return <Success result={result} onAgain={() => { setF(EMPTY); setResult(null); setStep(0); setVisited(0); }} />;
+  if (result) return <Success result={result} onAgain={() => { startOver(); setResult(null); }} />;
 
   const insured = f.fundingSource === 'insurance';
   const current = STEPS[step]!;
 
   return (
     <div className="min-h-screen bg-cream-100">
+      {demoStatus && (
+        <div className="pointer-events-none fixed inset-x-0 bottom-5 z-40 flex justify-center px-4">
+          <div className="pointer-events-auto flex animate-rise-sm items-center gap-3 rounded-full bg-seed-950 py-2 pl-4 pr-2 text-sm text-cream-50 shadow-lift" role="status">
+            <span className="flex gap-1" aria-hidden>
+              {[0, 1, 2].map((i) => <span key={i} className="h-1.5 w-1.5 animate-pulse rounded-full bg-clay-300" style={{ animationDelay: `${i * 180}ms` }} />)}
+            </span>
+            <span className="font-semibold">{demoStatus}</span>
+            <button type="button" onClick={() => (demoStop.current = true)} className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold hover:bg-white/20">Stop</button>
+          </div>
+        </div>
+      )}
       <ConceptNotice />
       <header className="border-b border-cream-200 bg-cream-50">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
@@ -217,6 +417,20 @@ export function IntakePage() {
           <p className="eyebrow mb-2">Request services</p>
           <h1 className="text-2xl font-black tracking-tight text-seed-950">New patient intake</h1>
           <p className="mt-1 text-sm text-ink-500">About 10 minutes. Replaces the printed intake packet.</p>
+          <div className="mt-3 flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1 text-xs" aria-live="polite">
+            {savedAt ? (
+              <>
+                <span className="inline-flex items-center gap-1.5 font-semibold text-seed-700">
+                  <CloudCheckmarkRegular className="text-base" /> Saved on this device · {savedLabel(savedAt, now)}
+                </span>
+                <button type="button" onClick={startOver} className="inline-flex items-center gap-1 font-bold text-ink-500 underline-offset-2 hover:text-clay-700 hover:underline">
+                  <ArrowResetRegular /> Start over
+                </button>
+              </>
+            ) : (
+              <span className="text-ink-500">Your answers save automatically as you go.</span>
+            )}
+          </div>
           <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-seed-100 lg:hidden" role="progressbar" aria-valuenow={step + 1} aria-valuemin={1} aria-valuemax={STEPS.length} aria-label="Form progress">
             <div className="h-full rounded-full bg-seed-500 transition-[width]" style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} />
           </div>
@@ -253,9 +467,14 @@ export function IntakePage() {
               className="mb-4"
               title="Demo form"
               action={
-                <Button variant="secondary" size="sm" onClick={() => { setF(SAMPLE); setErrors({}); }}>
-                  <SparkleRegular /> Fill sample family
-                </Button>
+                <div className="flex flex-col items-stretch gap-1.5">
+                  <Button size="sm" onClick={() => void runDemo()} disabled={Boolean(demoStatus)}>
+                    <SparkleRegular /> Watch the demo
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setF(SAMPLE); setErrors({}); }} disabled={Boolean(demoStatus)}>
+                    Fill instantly
+                  </Button>
+                </div>
               }
             >
               Please don’t enter real information about a child. To request real services, call {PRACTICE.phone}.
@@ -268,16 +487,16 @@ export function IntakePage() {
 
             {current.id === 'child' && (
               <Grid>
-                <Field label="Child’s first name" required error={err('child.firstName')}>
+                <Field name="child.firstName" label="Child’s first name" required error={err('child.firstName')}>
                   <Input inputSize="lg" autoComplete="off" value={f.child.firstName} onChange={(e) => setIn('child', 'firstName', e.target.value)} />
                 </Field>
-                <Field label="Child’s last name" required error={err('child.lastName')}>
+                <Field name="child.lastName" label="Child’s last name" required error={err('child.lastName')}>
                   <Input inputSize="lg" autoComplete="off" value={f.child.lastName} onChange={(e) => setIn('child', 'lastName', e.target.value)} />
                 </Field>
-                <Field label="Date of birth" required error={err('child.dateOfBirth')}>
+                <Field name="child.dateOfBirth" label="Date of birth" required error={err('child.dateOfBirth')}>
                   <BirthDatePicker key={f.child.dateOfBirth ? 'set' : 'empty'} value={f.child.dateOfBirth} onChange={(v) => setIn('child', 'dateOfBirth', v)} />
                 </Field>
-                <Field label="Language spoken at home" hint="We’ll try to match a therapist who speaks it.">
+                <Field name="child.preferredLanguage" label="Language spoken at home" hint="We’ll try to match a therapist who speaks it.">
                   <Select size="lg" value={f.child.preferredLanguage} onValueChange={(v) => setIn('child', 'preferredLanguage', v)} options={LANGUAGES.map((l) => ({ value: l, label: l }))} />
                 </Field>
               </Grid>
@@ -286,19 +505,19 @@ export function IntakePage() {
             {current.id === 'family' && (
               <div className="space-y-8">
                 <Grid>
-                  <Field label="Your first name" required error={err('guardian.firstName')}>
+                  <Field name="guardian.firstName" label="Your first name" required error={err('guardian.firstName')}>
                     <Input inputSize="lg" autoComplete="given-name" value={f.guardian.firstName} onChange={(e) => setIn('guardian', 'firstName', e.target.value)} />
                   </Field>
-                  <Field label="Your last name" required error={err('guardian.lastName')}>
+                  <Field name="guardian.lastName" label="Your last name" required error={err('guardian.lastName')}>
                     <Input inputSize="lg" autoComplete="family-name" value={f.guardian.lastName} onChange={(e) => setIn('guardian', 'lastName', e.target.value)} />
                   </Field>
-                  <Field label="Relationship to child">
+                  <Field name="guardian.relationship" label="Relationship to child">
                     <Select size="lg" value={f.guardian.relationship} onValueChange={(v) => setIn('guardian', 'relationship', v)} options={['Mother', 'Father', 'Guardian', 'Grandparent', 'Foster parent', 'Other'].map((r) => ({ value: r, label: r }))} />
                   </Field>
-                  <Field label="Mobile phone" required error={err('guardian.phone')}>
+                  <Field name="guardian.phone" label="Mobile phone" required error={err('guardian.phone')}>
                     <Input inputSize="lg" type="tel" inputMode="tel" autoComplete="tel" placeholder="(516) 555-0123" value={f.guardian.phone} onChange={(e) => setIn('guardian', 'phone', e.target.value)} />
                   </Field>
-                  <Field label="Email" hint="We’ll only email you about scheduling." error={err('guardian.email')} className="sm:col-span-2">
+                  <Field name="guardian.email" label="Email" hint="We’ll only email you about scheduling." error={err('guardian.email')} className="sm:col-span-2">
                     <Input inputSize="lg" type="email" autoComplete="email" placeholder="you@example.com" value={f.guardian.email} onChange={(e) => setIn('guardian', 'email', e.target.value)} />
                   </Field>
                 </Grid>
@@ -306,17 +525,17 @@ export function IntakePage() {
                   <h3 className="mb-1 font-extrabold text-ink-900">Home address</h3>
                   <p className="mb-4 text-sm text-ink-500">Many of our therapists travel to families. Your address helps us find someone nearby.</p>
                   <Grid>
-                    <Field label="Street address" required error={err('address.line1')} className="sm:col-span-2">
+                    <Field name="address.line1" label="Street address" required error={err('address.line1')} className="sm:col-span-2">
                       <Input inputSize="lg" autoComplete="address-line1" placeholder="123 Main St" value={f.address.line1} onChange={(e) => setIn('address', 'line1', e.target.value)} />
                     </Field>
-                    <Field label="City / town" required error={err('address.city')}>
+                    <Field name="address.city" label="City / town" required error={err('address.city')}>
                       <Input inputSize="lg" autoComplete="address-level2" value={f.address.city} onChange={(e) => setIn('address', 'city', e.target.value)} />
                     </Field>
                     <div className="grid grid-cols-2 gap-4">
-                      <Field label="State" required error={err('address.state')}>
+                      <Field name="address.state" label="State" required error={err('address.state')}>
                         <Input inputSize="lg" maxLength={2} autoComplete="address-level1" value={f.address.state} onChange={(e) => setIn('address', 'state', e.target.value.toUpperCase())} />
                       </Field>
-                      <Field label="ZIP" required error={err('address.postalCode')}>
+                      <Field name="address.postalCode" label="ZIP" required error={err('address.postalCode')}>
                         <Input inputSize="lg" inputMode="numeric" maxLength={5} autoComplete="postal-code" value={f.address.postalCode} onChange={(e) => setIn('address', 'postalCode', e.target.value.replace(/\D/g, ''))} />
                       </Field>
                     </div>
@@ -327,7 +546,7 @@ export function IntakePage() {
 
             {current.id === 'needs' && (
               <div className="space-y-6">
-                <Field label="Which services are you looking for?" required error={err('services')}>
+                <Field name="services" label="Which services are you looking for?" required error={err('services')}>
                   <div className="grid gap-3 sm:grid-cols-2">
                     {([
                       ['speech', <ChatRegular key="i" />, 'Talking, understanding, sounds, stuttering, social communication'],
@@ -345,7 +564,7 @@ export function IntakePage() {
                     ))}
                   </div>
                 </Field>
-                <Field label="Tell us about your concerns" required error={err('concerns')} hint="What have you noticed, and when? Has a doctor or teacher mentioned anything?">
+                <Field name="concerns" label="Tell us about your concerns" required error={err('concerns')} hint="What have you noticed, and when? Has a doctor or teacher mentioned anything?">
                   <Textarea rows={5} value={f.concerns} onChange={(e) => set('concerns', e.target.value)} placeholder="For example: She uses about 15 words and gets frustrated when we don’t understand her…" />
                 </Field>
                 <div className="rounded-2xl border border-clay-200 bg-clay-50 p-4">
@@ -361,14 +580,14 @@ export function IntakePage() {
             {current.id === 'coverage' && (
               <div className="space-y-6">
                 <Grid>
-                  <Field label="Who referred you?" required error={err('referralSource')}>
+                  <Field name="referralSource" label="Who referred you?" required error={err('referralSource')}>
                     <Select size="lg" placeholder="Choose one" value={f.referralSource} onValueChange={(v) => set('referralSource', v)} options={REFERRAL_SOURCES.map((r) => ({ value: r, label: REFERRAL_LABEL[r] }))} />
                   </Field>
-                  <Field label="Referring doctor, school or office" hint="Optional">
+                  <Field name="referringProvider" label="Referring doctor, school or office" hint="Optional">
                     <Input inputSize="lg" placeholder="e.g. Mineola Pediatrics" value={f.referringProvider} onChange={(e) => set('referringProvider', e.target.value)} />
                   </Field>
                 </Grid>
-                <Field label="How will services be covered?" required error={err('fundingSource')}>
+                <Field name="fundingSource" label="How will services be covered?" required error={err('fundingSource')}>
                   <div className="grid gap-3 sm:grid-cols-3">
                     {FUNDING_OPTIONS.map((o) => (
                       <ChoiceCard key={o.id} selected={f.fundingSource === o.id} onClick={() => set('fundingSource', o.id)} title={FUNDING_LABEL[o.id]} hint={o.hint} />
@@ -377,10 +596,10 @@ export function IntakePage() {
                 </Field>
                 {insured && (
                   <Grid>
-                    <Field label="Insurance plan" required>
+                    <Field name="insurance.payer" label="Insurance plan" required>
                       <Select size="lg" placeholder="Choose your plan" value={f.plan} onValueChange={(v) => set('plan', v)} options={[...INSURANCE.plans, OTHER_PLAN].map((p) => ({ value: p, label: p }))} />
                     </Field>
-                    <Field label="Member ID" required error={err('insurance.memberId')}>
+                    <Field name="insurance.memberId" label="Member ID" required error={err('insurance.memberId')}>
                       <Input inputSize="lg" placeholder="As shown on the card" value={f.memberId} onChange={(e) => set('memberId', e.target.value)} />
                     </Field>
                     {f.plan === OTHER_PLAN && (
@@ -395,7 +614,7 @@ export function IntakePage() {
 
             {current.id === 'schedule' && (
               <div className="space-y-7">
-                <Field label="Where would you like sessions?">
+                <Field name="preferredSetting" label="Where would you like sessions?">
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     {([
                       ['home', <HomeRegular key="i" />, 'We come to you'],
@@ -412,14 +631,14 @@ export function IntakePage() {
                     <Field label="School or daycare name" required error={err('communityLocation.name') ?? err('communityLocation')} className="sm:col-span-2">
                       <Input inputSize="lg" value={f.community.name} onChange={(e) => setIn('community', 'name', e.target.value)} />
                     </Field>
-                    <Field label="Street address" required error={err('communityLocation.line1')}>
+                    <Field name="communityLocation.line1" label="Street address" required error={err('communityLocation.line1')}>
                       <Input inputSize="lg" value={f.community.line1} onChange={(e) => setIn('community', 'line1', e.target.value)} />
                     </Field>
                     <div className="grid grid-cols-2 gap-4">
-                      <Field label="City" required error={err('communityLocation.city')}>
+                      <Field name="communityLocation.city" label="City" required error={err('communityLocation.city')}>
                         <Input inputSize="lg" value={f.community.city} onChange={(e) => setIn('community', 'city', e.target.value)} />
                       </Field>
-                      <Field label="ZIP" required error={err('communityLocation.postalCode')}>
+                      <Field name="communityLocation.postalCode" label="ZIP" required error={err('communityLocation.postalCode')}>
                         <Input inputSize="lg" inputMode="numeric" maxLength={5} value={f.community.postalCode} onChange={(e) => setIn('community', 'postalCode', e.target.value.replace(/\D/g, ''))} />
                       </Field>
                     </div>
@@ -428,7 +647,7 @@ export function IntakePage() {
                 {f.preferredSetting !== 'telehealth' && (
                   <Checkbox checked={f.acceptsTelehealth} onCheckedChange={(v) => set('acceptsTelehealth', v)} label="Teletherapy is OK if it means starting sooner" />
                 )}
-                <Field label="When is your child usually free?" required error={err('availability')} hint="Tap every time that could work each week. More options usually means a faster start.">
+                <Field name="availability" label="When is your child usually free?" required error={err('availability')} hint="Tap every time that could work each week. More options usually means a faster start.">
                   <AvailabilityGrid bands={f.bands} onChange={(bands) => set('bands', bands)} />
                 </Field>
               </div>
@@ -456,7 +675,7 @@ export function IntakePage() {
                   label={<><strong className="text-ink-900">Office policy.</strong> 24-hour cancellation notice, attendance and teletherapy rules.</>}
                   description="Optional now; otherwise it’ll be waiting in your family portal."
                 />
-                <Field label="Type your full name to sign" required error={err('consent.signatureName')}>
+                <Field name="consent.signatureName" label="Type your full name to sign" required error={err('consent.signatureName')}>
                   <Input inputSize="lg" value={f.consent.signatureName} onChange={(e) => setIn('consent', 'signatureName', e.target.value)} className="font-semibold" placeholder="Full name" />
                 </Field>
                 <p className="text-xs text-ink-500">
@@ -474,11 +693,11 @@ export function IntakePage() {
                 <ArrowLeftRegular /> Back
               </Button>
               {step < STEPS.length - 1 ? (
-                <Button size="lg" onClick={next}>
+                <Button size="lg" onClick={next} disabled={Boolean(demoStatus)}>
                   Continue <ArrowRightRegular />
                 </Button>
               ) : (
-                <Button size="lg" onClick={onSubmit} disabled={submit.isPending}>
+                <Button size="lg" data-submit onClick={() => { setDemoDone(false); void onSubmit(); }} disabled={submit.isPending || Boolean(demoStatus)} className={cn(demoDone && 'demo-cta')}>
                   {submit.isPending ? 'Sending…' : 'Submit request'}
                 </Button>
               )}
@@ -528,43 +747,43 @@ function AvailabilityGrid({ bands, onChange }: { bands: string[]; onChange: (b: 
         <button type="button" className="chip hover:border-seed-300" onClick={() => preset(['morning', 'midday'], [6])}>+ Saturday</button>
         {bands.length > 0 && <button type="button" className="chip text-clay-700!" onClick={() => onChange([])}>Clear</button>}
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[520px] border-separate border-spacing-1.5">
-          <thead>
-            <tr>
-              <th />
-              {DAYS.map((d) => <th key={d} className="text-xs font-bold uppercase tracking-wider text-ink-500">{DAY_SHORT[d]}</th>)}
-            </tr>
-          </thead>
-          <tbody>
+      <table className="w-full table-fixed border-separate border-spacing-1 sm:border-spacing-1.5">
+        <thead>
+          <tr>
+            <th className="w-12 sm:w-24" />
             {TIME_BANDS.map((b) => (
-              <tr key={b.id}>
-                <th scope="row" className="pr-2 text-left">
-                  <span className="block text-sm font-bold text-ink-900">{b.label}</span>
-                  <span className="text-xs text-ink-500">{b.hint}</span>
-                </th>
-                {DAYS.map((d) => {
-                  const key = `${d}:${b.id}`;
-                  const on = has.has(key);
-                  return (
-                    <td key={key}>
-                      <button
-                        type="button"
-                        aria-pressed={on}
-                        aria-label={`${DAY_SHORT[d]} ${b.label}`}
-                        onClick={() => toggle(key)}
-                        className={`focus-ring grid h-11 w-full place-items-center rounded-xl border-2 text-sm transition ${on ? 'border-seed-500 bg-seed-500 text-white' : 'border-cream-200 bg-white text-transparent hover:border-seed-200 hover:text-seed-300'}`}
-                      >
-                        <CheckmarkRegular />
-                      </button>
-                    </td>
-                  );
-                })}
-              </tr>
+              <th key={b.id} className="pb-1 text-center align-bottom">
+                <span className="block text-[11px] font-extrabold leading-tight text-ink-900 sm:text-xs">{b.label}</span>
+                <span className="block text-[10px] font-semibold text-ink-500 sm:text-[11px]">{b.hint}</span>
+              </th>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </tr>
+        </thead>
+        <tbody>
+          {DAYS.map((d) => (
+            <tr key={d}>
+              <th scope="row" className="pr-1 text-left text-xs font-extrabold uppercase tracking-wider text-ink-500">{DAY_SHORT[d]}</th>
+              {TIME_BANDS.map((b) => {
+                const key = `${d}:${b.id}`;
+                const on = has.has(key);
+                return (
+                  <td key={key}>
+                    <button
+                      type="button"
+                      aria-pressed={on}
+                      aria-label={`${DAY_SHORT[d]} ${b.label}`}
+                      onClick={() => toggle(key)}
+                      className={`focus-ring grid h-11 w-full place-items-center rounded-xl border-2 text-sm transition active:scale-95 ${on ? 'border-seed-500 bg-seed-500 text-white shadow-card' : 'border-cream-200 bg-white text-transparent hover:border-seed-200 hover:text-seed-300'}`}
+                    >
+                      <CheckmarkRegular className={on ? 'animate-pop-in' : ''} />
+                    </button>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
       <p className="mt-2 text-xs font-semibold text-ink-500">{bands.length} time{bands.length === 1 ? '' : 's'} selected</p>
     </div>
   );
@@ -572,7 +791,7 @@ function AvailabilityGrid({ bands, onChange }: { bands: string[]; onChange: (b: 
 
 function Review({ f, onEdit, insured }: { f: FormState; onEdit: (step: number) => void; insured: boolean }) {
   const rows: { step: number; title: string; lines: string[] }[] = [
-    { step: 0, title: 'Child', lines: [`${f.child.firstName} ${f.child.lastName}`, `Born ${f.child.dateOfBirth}`, `Language: ${f.child.preferredLanguage}`] },
+    { step: 0, title: 'Child', lines: [`${f.child.firstName} ${f.child.lastName}`, `Born ${formatLong(f.child.dateOfBirth)}`, `Language: ${f.child.preferredLanguage}`] },
     { step: 1, title: 'Parent / guardian', lines: [`${f.guardian.firstName} ${f.guardian.lastName} (${f.guardian.relationship})`, f.guardian.phone, f.guardian.email, `${f.address.line1}, ${f.address.city}, ${f.address.state} ${f.address.postalCode}`].filter(Boolean) },
     { step: 2, title: 'Services', lines: [f.services.map((s) => DISCIPLINE_LABEL[s]).join(' + '), f.urgentConcern ? 'Flagged: feeding/swallowing/safety concern' : '', f.concerns].filter(Boolean) },
     { step: 3, title: 'Coverage', lines: [f.fundingSource ? FUNDING_LABEL[f.fundingSource] : '', insured ? `${f.plan === OTHER_PLAN ? f.otherPlan : f.plan} · ${f.memberId}` : '', f.referralSource ? `Referred by: ${REFERRAL_LABEL[f.referralSource]}${f.referringProvider ? `, ${f.referringProvider}` : ''}` : ''].filter(Boolean) },

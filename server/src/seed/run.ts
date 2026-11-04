@@ -6,7 +6,8 @@ import { loadConfig } from '../config.ts';
 import { connectDb } from '../db/models.ts';
 import { createCalendarSync } from '../services/calendarSync.ts';
 import { createGeocoder, createTravelService } from '../services/geo.ts';
-import { resetDatabase, seedDemoData, seedIfEmpty } from './demoData.ts';
+import { DEMO_SEED_VERSION, resetDatabase, seedDemoData, seedIfEmpty } from './demoData.ts';
+import { Meta } from '../db/models.ts';
 import type { Services } from '../context.ts';
 
 const config = loadConfig();
@@ -23,6 +24,7 @@ const s: Services = {
 if (process.argv.includes('--reset')) {
   await resetDatabase();
   log.info(await seedDemoData(s), 'Reset and seeded demo data');
+  await Meta.updateOne({ _id: 'demo-seed' }, { $set: { version: DEMO_SEED_VERSION, at: new Date() } }, { upsert: true });
 } else {
   await seedIfEmpty(s);
 }

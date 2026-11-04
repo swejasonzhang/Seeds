@@ -45,8 +45,8 @@ export function createApp(s: Services) {
           scriptSrc: ["'self'"],
           styleSrc: ["'self'", "'unsafe-inline'"], // Fluent UI injects atomic CSS at runtime
           imgSrc: ["'self'", 'data:'],
-          connectSrc: ["'self'", 'https://login.microsoftonline.com'],
-          frameSrc: ['https://login.microsoftonline.com'],
+          connectSrc: ["'self'", 'https://login.microsoftonline.com', 'https://*.ciamlogin.com'],
+          frameSrc: ['https://login.microsoftonline.com', 'https://*.ciamlogin.com'],
         },
       },
     }),
@@ -80,7 +80,7 @@ export function createApp(s: Services) {
     const { auth } = s.config;
     const body: PublicConfigDto = {
       authMode: auth.mode,
-      entra: auth.mode === 'entra' ? { clientId: auth.spaClientId!, tenantId: auth.tenantId!, apiScope: auth.apiScope! } : undefined,
+      entra: auth.entraEnabled ? { clientId: auth.spaClientId!, tenantId: auth.tenantId!, apiScope: auth.apiScope!, authority: auth.authority! } : undefined,
       travelSource: s.travel.source,
       calendarSync: s.calendar.enabled,
     };
@@ -106,7 +106,7 @@ export function createApp(s: Services) {
   api.use(authenticate);
   api.get('/me', (req, res) => {
     const u = req.user!;
-    const body: MeDto = { name: u.name, email: u.email, roles: u.roles, authMode: s.config.auth.mode, therapistId: u.therapistId, familyKey: u.familyKey };
+    const body: MeDto = { name: u.name, email: u.email, roles: u.roles, authMode: s.config.auth.mode, therapistId: u.therapistId, familyKey: u.familyKey, via: u.via };
     res.json(body);
   });
   api.use(documentRoutes());

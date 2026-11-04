@@ -199,7 +199,7 @@ export const documentBucket = () => new mongoose.mongo.GridFSBucket(mongoose.con
 
 // ---------- meta (locks, one-time jobs) ----------
 
-export const Meta = model('Meta', new Schema({ _id: String, at: Date }, { versionKey: false }), 'meta');
+export const Meta = model('Meta', new Schema({ _id: String, at: Date, version: Number }, { versionKey: false }), 'meta');
 
 export type ChildDoc = mongoose.InferSchemaType<typeof childSchema> & { _id: mongoose.Types.ObjectId };
 export type CaseDoc = mongoose.InferSchemaType<typeof caseSchema> & { _id: mongoose.Types.ObjectId };

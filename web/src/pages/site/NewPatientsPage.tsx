@@ -1,6 +1,7 @@
 import { ArrowRightRegular, CheckmarkRegular, DocumentTextRegular, PrintRegular, ShieldCheckmarkRegular } from '@fluentui/react-icons';
 import { OFFICE_POLICY, PRACTICE } from '../../site/practice';
 import { CtaLink } from '../../components/SiteLayout';
+import { Reveal } from '../../components/motion';
 
 const PREPARE = [
   'Your child’s insurance card (front and back), or CPSE/CSE paperwork',
@@ -20,13 +21,13 @@ export function NewPatientsPage() {
         and goes straight to our intake coordinator.
       </p>
       <div className="mt-8 flex flex-wrap gap-3">
-        <CtaLink className="px-6! py-3! text-base!">Start the intake form <ArrowRightRegular /></CtaLink>
+        <CtaLink className="px-6 py-3 text-base">Start the intake form <ArrowRightRegular /></CtaLink>
         <a href={PRACTICE.phoneHref} className="inline-flex items-center rounded-full border border-seed-300 bg-white px-6 py-3 font-bold text-seed-900 hover:border-seed-500">
           Not sure? Call for a free screening
         </a>
       </div>
 
-      <div className="mt-14 grid gap-6 lg:grid-cols-3">
+      <div className="stagger mt-14 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="card card-pad lg:col-span-2">
           <h2 className="flex items-center gap-2 text-lg font-extrabold text-seed-950"><DocumentTextRegular className="text-seed-500" /> Have these handy</h2>
           <ul className="mt-5 space-y-3">
@@ -50,15 +51,15 @@ export function NewPatientsPage() {
         </div>
       </div>
 
-      <div className="card card-pad mt-6">
+      <Reveal className="card card-pad mt-6">
         <h2 className="flex items-center gap-2 text-lg font-extrabold text-seed-950"><ShieldCheckmarkRegular className="text-seed-500" /> Office policy at a glance</h2>
         <ul className="mt-5 grid gap-3 md:grid-cols-2">
           {OFFICE_POLICY.map((p) => (
-            <li key={p} className="rounded-xl bg-cream-50 p-4 text-sm text-ink-700">{p}</li>
+            <li key={p} className="scroll-in rounded-xl bg-cream-50 p-4 text-sm text-ink-700">{p}</li>
           ))}
         </ul>
         <p className="mt-4 text-xs text-ink-500">Your information is kept in strict confidence and handled under our HIPAA privacy practices.</p>
-      </div>
+      </Reveal>
     </div>
   );
 }

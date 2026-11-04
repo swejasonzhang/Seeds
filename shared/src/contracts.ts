@@ -345,6 +345,7 @@ export interface MeDto {
   authMode: 'demo' | 'entra';
   therapistId?: string;
   familyKey?: string;
+  via: 'microsoft' | 'demo';
 }
 
 // ---------- Portals ----------
@@ -410,7 +411,8 @@ export interface DemoPersonasDto {
 /** Public, unauthenticated runtime config for the SPA, so one build works in every environment. */
 export interface PublicConfigDto {
   authMode: 'demo' | 'entra';
-  entra?: { clientId: string; tenantId: string; apiScope: string };
+  /** Present whenever Microsoft sign-in is configured (also alongside demo accounts). */
+  entra?: { clientId: string; tenantId: string; apiScope: string; authority: string };
   travelSource: TravelSource;
   calendarSync: boolean;
 }

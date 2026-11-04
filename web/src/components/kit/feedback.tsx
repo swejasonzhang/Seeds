@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Toaster as Sonner, toast } from 'sonner';
 import { CheckmarkCircleRegular, ErrorCircleRegular, InfoRegular, WarningRegular } from '@fluentui/react-icons';
 import { cn } from './core';
@@ -32,7 +32,7 @@ export function Spinner({ label }: { label?: string }) {
   );
 }
 
-export const Skeleton = ({ className }: { className?: string }) => <div className={cn('animate-pulse rounded-lg bg-cream-200', className)} />;
+export const Skeleton = ({ className }: { className?: string }) => <div className={cn('shimmer rounded-lg', className)} />;
 
 export const initialsOf = (name: string) =>
   name
@@ -51,13 +51,21 @@ export function Avatar({ name, size = 'md', tone = 'seed' }: { name: string; siz
 
 /** Branded toasts (Sonner). */
 export function Toaster() {
+  // Phones: toasts at the top so they never cover the primary action at the bottom of the screen.
+  const [compact, setCompact] = useState(() => typeof window !== 'undefined' && window.matchMedia('(max-width: 639px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 639px)');
+    const on = () => setCompact(mq.matches);
+    mq.addEventListener('change', on);
+    return () => mq.removeEventListener('change', on);
+  }, []);
   return (
     <Sonner
-      position="bottom-right"
+      position={compact ? 'top-center' : 'bottom-right'}
       toastOptions={{
         unstyled: true,
         classNames: {
-          toast: 'flex w-[360px] items-start gap-3 rounded-2xl border border-cream-200 bg-white p-4 shadow-lift',
+          toast: 'flex w-[min(360px,calc(100vw-2rem))] items-start gap-3 rounded-2xl border border-cream-200 bg-white p-4 shadow-lift',
           title: 'text-sm font-extrabold text-ink-900',
           description: 'text-xs text-ink-500 mt-0.5',
           icon: 'mt-0.5',

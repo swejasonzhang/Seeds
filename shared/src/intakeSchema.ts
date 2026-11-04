@@ -28,7 +28,7 @@ export const addressSchema = z.object({
 
 const YEAR_MS = 365.25 * 24 * 3600 * 1000;
 const dateOfBirth = z.iso
-  .date('Use YYYY-MM-DD')
+  .date('Choose the month, day and year')
   .refine((d) => new Date(`${d}T00:00:00Z`).getTime() <= Date.now(), 'Date of birth is in the future')
   .refine(
     (d) => Date.now() - new Date(`${d}T00:00:00Z`).getTime() <= 21 * YEAR_MS,

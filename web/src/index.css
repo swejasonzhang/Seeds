@@ -109,3 +109,153 @@
     to { transform: translateX(0); }
   }
 }
+
+/* ---------------- Motion system ---------------- */
+@theme {
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.2, 1.4, 0.4, 1);
+  --animate-rise: rise 620ms var(--ease-out-expo) both;
+  --animate-rise-sm: rise-sm 420ms var(--ease-out-expo) both;
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-drift: drift 18s ease-in-out infinite alternate;
+  --animate-check: check-pop 460ms var(--ease-spring) both;
+  --animate-grow-x: grow-x 1000ms var(--ease-out-expo) both;
+  --animate-shimmer: shimmer 1.5s linear infinite;
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(22px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes rise-sm {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes float {
+    0%, 100% { transform: translateY(0) rotate(1deg); }
+    50% { transform: translateY(-10px) rotate(0.4deg); }
+  }
+  @keyframes drift {
+    from { transform: translate(0, 0) scale(1); }
+    to { transform: translate(-40px, 30px) scale(1.08); }
+  }
+  @keyframes check-pop {
+    0% { transform: scale(0.3); opacity: 0; }
+    60% { transform: scale(1.18); opacity: 1; }
+    100% { transform: scale(1); }
+  }
+  @keyframes grow-x {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+  @keyframes shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
+}
+
+@layer components {
+  /* scroll reveal (see <Reveal>) */
+  .reveal {
+    opacity: 0;
+    transform: translateY(26px);
+    transition: opacity 800ms var(--ease-out-expo), transform 800ms var(--ease-out-expo);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+  .reveal[data-shown='true'] {
+    opacity: 1;
+    transform: none;
+  }
+  /* children rise in sequence */
+  .stagger > * {
+    animation: var(--animate-rise);
+  }
+  .stagger > *:nth-child(2) { animation-delay: 60ms; }
+  .stagger > *:nth-child(3) { animation-delay: 120ms; }
+  .stagger > *:nth-child(4) { animation-delay: 180ms; }
+  .stagger > *:nth-child(5) { animation-delay: 240ms; }
+  .stagger > *:nth-child(6) { animation-delay: 300ms; }
+  .stagger > *:nth-child(7) { animation-delay: 340ms; }
+  .stagger > *:nth-child(8) { animation-delay: 380ms; }
+  .stagger > *:nth-child(n + 9) { animation-delay: 420ms; }
+  .page-enter {
+    animation: var(--animate-rise-sm);
+  }
+  .lift {
+    transition: transform 300ms var(--ease-out-expo), box-shadow 300ms var(--ease-out-expo), border-color 200ms;
+  }
+  .lift:hover {
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-lift);
+  }
+  .shimmer {
+    background: linear-gradient(90deg, var(--color-cream-200) 25%, var(--color-cream-100) 50%, var(--color-cream-200) 75%);
+    background-size: 200% 100%;
+    animation: var(--animate-shimmer);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .reveal { opacity: 1; transform: none; }
+}
+
+/* ---------------- Scroll-linked easing ----------------
+ * Anything with .scroll-in eases in as it scrolls into view, tied to scroll position (native scroll timelines),
+ * and eases back if you scroll up. Browsers without scroll timelines get a one-time fade via IntersectionObserver
+ * (installScrollReveal in components/motion.tsx). */
+@keyframes scroll-in {
+  from { opacity: 0; transform: translateY(36px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+@supports (animation-timeline: view()) {
+  .scroll-in {
+    animation: scroll-in linear both;
+    animation-timeline: view();
+    /* finish 120px after the element starts entering: works for the last rows on a page and for tall cards */
+    animation-range: entry 0% entry 120px;
+  }
+}
+@supports not (animation-timeline: view()) {
+  .scroll-in {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 900ms var(--ease-out-expo), transform 900ms var(--ease-out-expo);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+  .scroll-in[data-shown='true'] {
+    opacity: 1;
+    transform: none;
+  }
+}
+html {
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scroll-in { animation: none !important; opacity: 1 !important; transform: none !important; }
+  html { scroll-behavior: auto; }
+}
+
+/* Demo autopilot: the field being "typed" glows */
+@keyframes demo-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgb(58 106 96 / 0.18); }
+  50% { box-shadow: 0 0 0 7px rgb(58 106 96 / 0.08); }
+}
+[data-demo='on'] {
+  position: relative;
+}
+[data-demo='on']::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border-radius: 18px;
+  pointer-events: none;
+  animation: demo-pulse 1.1s ease-in-out infinite;
+}
+.demo-cta {
+  animation: demo-pulse 1.1s ease-in-out infinite;
+}

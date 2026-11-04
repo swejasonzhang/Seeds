@@ -11,7 +11,7 @@ export const cn = (...inputs: ClassValue[]) => twMerge(clsx(inputs));
 // ---------------- Button ----------------
 
 export const buttonVariants = cva(
-  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-bold transition-all outline-none focus-visible:ring-4 focus-visible:ring-seed-500/25 disabled:pointer-events-none disabled:opacity-45 [&_svg]:shrink-0',
+  'inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-bold transition-all duration-200 outline-none active:scale-[0.97] focus-visible:ring-4 focus-visible:ring-seed-500/25 disabled:pointer-events-none disabled:opacity-45 [&_svg]:shrink-0',
   {
     variants: {
       variant: {
@@ -54,12 +54,12 @@ interface FieldCtx {
 const FieldContext = createContext<FieldCtx | null>(null);
 export const useField = () => useContext(FieldContext);
 
-export function Field({ label, hint, error, required, children, className }: { label?: ReactNode; hint?: ReactNode; error?: string; required?: boolean; children: ReactNode; className?: string }) {
+export function Field({ label, hint, error, required, children, className, name }: { label?: ReactNode; hint?: ReactNode; error?: string; required?: boolean; children: ReactNode; className?: string; name?: string }) {
   const id = useId();
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
   return (
     <FieldContext.Provider value={{ id, invalid: Boolean(error), describedBy }}>
-      <div className={cn('flex flex-col gap-1.5', className)}>
+      <div data-field={name} className={cn('flex flex-col gap-1.5', className)}>
         {label && (
           <label htmlFor={id} className="text-sm font-bold text-ink-900">
             {label}

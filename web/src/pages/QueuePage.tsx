@@ -2,7 +2,7 @@ import { useDeferredValue, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Avatar, Button, Input, Select, Tabs, TabsList, TabsTrigger, Tip } from '../components/kit';
 import { ChevronRightRegular, FlashRegular, PeopleQueueRegular, SearchRegular } from '@fluentui/react-icons';
-import { CHECKLIST_LABEL, SETTING_LABEL, STATUS_LABEL, type CaseStatus, type Discipline } from '@seeds/shared';
+import { CHECKLIST_LABEL, SETTING_LABEL, STATUS_LABEL, type CaseStatus, type Discipline, type QueueItem } from '@seeds/shared';
 import { useDashboard, useQueue, useQueueCounts } from '../api';
 import { DisciplineBadge, ErrorBar, PriorityChips, SlaBadge, StatusBadge, formatAge } from '../components/bits';
 import { EmptyState, PageHeader, SkeletonRows, StatTile } from '../components/ui';
@@ -14,7 +14,7 @@ function KpiRow() {
   if (!d.data) return <div className="mb-6 grid h-[116px] gap-4 sm:grid-cols-2 xl:grid-cols-5" />;
   const k = d.data;
   return (
-    <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="stagger mb-6 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-5 [&>*:last-child]:col-span-2 xl:[&>*:last-child]:col-span-1">
       <StatTile label="Ready to schedule" value={k.readyToSchedule} context={`Median wait ${k.medianWaitDaysReady} days`} />
       <StatTile label="Waiting on paperwork" value={k.pendingDocuments} context="Authorizations, Rx, insurance" />
       <StatTile label="Needs review" value={k.needsReview} status={k.needsReview > 0 ? 'warning' : 'neutral'} context="Address or duplicate checks" />
@@ -55,8 +55,18 @@ export function QueuePage() {
       <KpiRow />
 
       <div className="card overflow-hidden">
+        {/* status: dropdown on phones, tabs from small tablets up (they wrap; nothing scrolls sideways) */}
         <div className="border-b border-cream-200 p-3">
-          <Tabs value={status} onValueChange={(v) => { setStatus(v as CaseStatus); reset(); }}>
+          <div className="sm:hidden">
+            <Select
+              aria-label="Status"
+              size="lg"
+              value={status}
+              onValueChange={(v) => { setStatus(v); reset(); }}
+              options={TABS.map((t) => ({ value: t, label: `${STATUS_LABEL[t]} (${counts.data?.counts[t] ?? 0})` }))}
+            />
+          </div>
+          <Tabs className="hidden sm:block" value={status} onValueChange={(v) => { setStatus(v as CaseStatus); reset(); }}>
             <TabsList>
               {TABS.map((t) => (
                 <TabsTrigger key={t} value={t} count={counts.data?.counts[t] ?? 0}>{STATUS_LABEL[t]}</TabsTrigger>
@@ -65,11 +75,11 @@ export function QueuePage() {
           </Tabs>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 border-b border-cream-200 bg-cream-50 px-5 py-3">
-          <div className="min-w-[260px] flex-1 sm:max-w-sm">
+        <div className="grid grid-cols-2 gap-3 border-b border-cream-200 bg-cream-50 p-3 sm:flex sm:flex-wrap sm:items-center sm:px-5">
+          <div className="col-span-2 sm:w-80 sm:flex-none">
             <Input icon={<SearchRegular />} aria-label="Search" placeholder="Search child, family or reference" value={search} onChange={(e) => { setSearch(e.target.value); reset(); }} />
           </div>
-          <div className="w-48">
+          <div className={waiting ? 'sm:w-48' : 'col-span-2 sm:w-48'}>
             <Select
               aria-label="Service"
               value={discipline || 'all'}
@@ -78,7 +88,7 @@ export function QueuePage() {
             />
           </div>
           {waiting && (
-            <div className="w-52">
+            <div className="sm:w-52">
               <Select
                 aria-label="Target date"
                 value={sla || 'any'}
@@ -87,7 +97,7 @@ export function QueuePage() {
               />
             </div>
           )}
-          <span className="ml-auto text-sm text-ink-500">{queue.data ? `${queue.data.total} ${queue.data.total === 1 ? 'child' : 'children'}` : ''}</span>
+          <span className="col-span-2 text-sm text-ink-500 sm:ml-auto">{queue.data ? `${queue.data.total} ${queue.data.total === 1 ? 'child' : 'children'}` : ''}</span>
         </div>
 
         {queue.isError && <div className="p-4"><ErrorBar error={queue.error} /></div>}
@@ -98,73 +108,86 @@ export function QueuePage() {
             {q ? 'Try a different search.' : 'New online intakes appear here automatically.'}
           </EmptyState>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-white text-xs font-bold uppercase tracking-wider text-ink-500">
+          <>
+            {/* phones: one card per child */}
+            <ul className="divide-y divide-cream-200 md:hidden">
+              {queue.data?.items.map((c, i) => (
+                <li key={c.id} className="scroll-in">
+                  <button type="button" onClick={() => nav(`/staff/cases/${c.id}`)} className="flex w-full gap-3 p-4 text-left active:bg-seed-50">
+                    <span className="w-6 shrink-0 pt-2 text-xs font-black text-ink-500">{(page - 1) * pageSize + i + 1}</span>
+                    <Avatar name={c.childName} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-start justify-between gap-2">
+                        <span className="font-bold text-ink-900">{c.childName}</span>
+                        <span className="shrink-0 text-sm font-black tabular-nums text-ink-900">{c.effectiveWaitDays}d</span>
+                      </span>
+                      <span className="block text-xs text-ink-500">{formatAge(c.ageMonths)} · {c.town} · {SETTING_LABEL[c.preferredSetting]}</span>
+                      <span className="mt-2 flex flex-wrap items-center gap-1.5">
+                        <DisciplineBadge discipline={c.discipline} />
+                        <SlaBadge sla={c.sla} target={c.targetStartBy} />
+                        <PriorityChips factors={c.priorityFactors} />
+                      </span>
+                      <span className="mt-2 block text-xs"><NextStep c={c} scheduled={status === 'scheduled'} /></span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+
+            {/* tablets & up: a table whose columns appear only when there is room (never scrolls sideways) */}
+            <table className="hidden w-full text-left text-sm md:table">
+              <thead className="text-xs font-bold uppercase tracking-wider text-ink-500">
                 <tr className="border-b border-cream-200">
-                  <th className="w-12 px-5 py-3">#</th>
+                  <th className="w-12 py-3 pl-5 pr-2">#</th>
                   <th className="px-3 py-3">Child</th>
-                  <th className="hidden px-3 py-3 md:table-cell">Service</th>
+                  <th className="hidden px-3 py-3 2xl:table-cell">Service</th>
                   <th className="px-3 py-3">Waiting</th>
-                  <th className="hidden px-3 py-3 lg:table-cell">Priority</th>
-                  <th className="hidden px-3 py-3 sm:table-cell">Target</th>
-                  <th className="hidden px-3 py-3 xl:table-cell">Location</th>
+                  <th className="hidden px-3 py-3 xl:table-cell">Priority</th>
+                  <th className="px-3 py-3">Target</th>
+                  <th className="hidden px-3 py-3 2xl:table-cell">Location</th>
                   <th className="hidden px-3 py-3 lg:table-cell">{status === 'scheduled' ? 'Therapist' : 'Next step'}</th>
-                  <th className="w-8" />
+                  <th className="w-10" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-cream-200">
                 {queue.data?.items.map((c, i) => (
-                  <tr key={c.id} className="row-link" onClick={() => nav(`/staff/cases/${c.id}`)}>
-                    <td className="px-5 py-3 font-bold text-ink-500">{(page - 1) * pageSize + i + 1}</td>
+                  <tr key={c.id} className="scroll-in row-link" onClick={() => nav(`/staff/cases/${c.id}`)}>
+                    <td className="py-3 pl-5 pr-2 font-bold text-ink-500">{(page - 1) * pageSize + i + 1}</td>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-3">
                         <Avatar name={c.childName} size="sm" />
                         <div className="min-w-0">
-                          <p className="truncate font-bold text-ink-900">{c.childName}</p>
-                          <p className="text-xs text-ink-500">{formatAge(c.ageMonths)} · {c.referenceCode}</p>
+                          <p className="font-bold text-ink-900">{c.childName}</p>
+                          <p className="text-xs text-ink-500">
+                            {formatAge(c.ageMonths)} · {c.referenceCode}
+                            <span className="2xl:hidden"> · {c.discipline === 'speech' ? 'Speech' : 'OT'} · {c.town}</span>
+                          </p>
                         </div>
                       </div>
                     </td>
-                    <td className="hidden px-3 py-3 md:table-cell"><DisciplineBadge discipline={c.discipline} /></td>
-                    <td className="px-3 py-3">
+                    <td className="hidden px-3 py-3 2xl:table-cell"><DisciplineBadge discipline={c.discipline} /></td>
+                    <td className="whitespace-nowrap px-3 py-3">
                       <Tip content={`${c.waitDays} days since referral; ${c.effectiveWaitDays - c.waitDays} priority days added`}>
                         <span tabIndex={0} className="cursor-help font-black tabular-nums text-ink-900">{c.effectiveWaitDays}d</span>
                       </Tip>
                       {c.effectiveWaitDays !== c.waitDays && <span className="ml-1 text-xs text-ink-500">({c.waitDays}d)</span>}
                     </td>
-                    <td className="hidden px-3 py-3 lg:table-cell"><PriorityChips factors={c.priorityFactors} /></td>
-                    <td className="hidden px-3 py-3 sm:table-cell"><SlaBadge sla={c.sla} target={c.targetStartBy} /></td>
-                    <td className="hidden px-3 py-3 xl:table-cell">
+                    <td className="hidden px-3 py-3 xl:table-cell"><PriorityChips factors={c.priorityFactors} /></td>
+                    <td className="px-3 py-3"><SlaBadge sla={c.sla} target={c.targetStartBy} /></td>
+                    <td className="hidden px-3 py-3 2xl:table-cell">
                       <p className="font-semibold text-ink-900">{c.town}</p>
                       <p className="text-xs text-ink-500">{SETTING_LABEL[c.preferredSetting]}</p>
                     </td>
-                    <td className="hidden px-3 py-3 lg:table-cell">
-                      {status === 'scheduled' ? (
-                        <span className="text-ink-700">{c.assignedTherapistName}</span>
-                      ) : c.status === 'needs-review' ? (
-                        <span className="line-clamp-2 text-xs text-red-800">{c.reviewReason}</span>
-                      ) : c.missingChecklist.length ? (
-                        <span className="flex flex-wrap gap-1">
-                          {c.missingChecklist.map((m) => (
-                            <span key={m} className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">{CHECKLIST_LABEL[m]}</span>
-                          ))}
-                        </span>
-                      ) : c.status === 'ready' ? (
-                        <span className="text-xs font-bold text-seed-700">Match &amp; book →</span>
-                      ) : (
-                        <StatusBadge status={c.status} />
-                      )}
-                    </td>
+                    <td className="hidden px-3 py-3 lg:table-cell"><NextStep c={c} scheduled={status === 'scheduled'} /></td>
                     <td className="pr-4 text-ink-500"><ChevronRightRegular /></td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
+          </>
         )}
 
-        <div className="flex items-center justify-between border-t border-cream-200 bg-cream-50 px-5 py-3">
+        <div className="flex items-center justify-between gap-3 border-t border-cream-200 bg-cream-50 px-4 py-3 sm:px-5">
           <span className="text-sm text-ink-500">Page {page} of {pages}</span>
           <div className="flex gap-2">
             <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button>
@@ -174,4 +197,19 @@ export function QueuePage() {
       </div>
     </>
   );
+}
+
+function NextStep({ c, scheduled }: { c: QueueItem; scheduled: boolean }) {
+  if (scheduled) return <span className="text-ink-700">{c.assignedTherapistName}</span>;
+  if (c.status === 'needs-review') return <span className="text-xs text-red-800">{c.reviewReason}</span>;
+  if (c.missingChecklist.length)
+    return (
+      <span className="flex flex-wrap gap-1">
+        {c.missingChecklist.map((m) => (
+          <span key={m} className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">{CHECKLIST_LABEL[m]}</span>
+        ))}
+      </span>
+    );
+  if (c.status === 'ready') return <span className="text-xs font-bold text-seed-700">Match &amp; book →</span>;
+  return <StatusBadge status={c.status} />;
 }

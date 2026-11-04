@@ -6,7 +6,7 @@ import { EmptyState } from './ui';
 /** A therapist's itinerary for one date: stops in order, with the drive between each (Azure Maps when configured). */
 export function RouteSheet({ route, loading, date, onDate, homeLabel }: { route?: DayRoute; loading: boolean; date: string; onDate: (d: string) => void; homeLabel: string }) {
   return (
-    <div className="card card-pad">
+    <div className="scroll-in card card-pad">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-extrabold text-seed-950">Route sheet</h2>
@@ -31,7 +31,7 @@ export function RouteSheet({ route, loading, date, onDate, homeLabel }: { route?
             <p className="text-xs text-ink-500">{homeLabel}</p>
           </li>
           {route.stops.map((s) => (
-            <li key={s.appointmentId} className="relative pb-4">
+            <li key={s.appointmentId} className="scroll-in relative pb-4">
               <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-ink-500">
                 {s.setting === 'telehealth' ? <><VideoRegular /> Telehealth: no drive</> : <><VehicleCarRegular /> {s.driveMinutes} min · {s.driveMiles} mi from {s.fromLabel}</>}
               </p>

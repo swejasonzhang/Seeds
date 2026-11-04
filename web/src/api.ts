@@ -53,7 +53,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers: {
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(persona ? { 'X-Demo-Persona': persona.key } : {}),
+      ...(persona && !token ? { 'X-Demo-Persona': persona.key } : {}),
       ...init.headers,
     },
   });
@@ -174,7 +174,8 @@ function fileToBase64(file: File): Promise<string> {
 /** Documents need the persona header too, so fetch as a blob and open it. */
 export async function openDocument(id: string) {
   const persona = getPersona();
-  const res = await fetch(`/api/documents/${id}`, { headers: persona ? { 'X-Demo-Persona': persona.key } : {} });
+  const token = tokenProvider ? await tokenProvider() : null;
+  const res = await fetch(`/api/documents/${id}`, { headers: token ? { Authorization: `Bearer ${token}` } : persona ? { 'X-Demo-Persona': persona.key } : {} });
   if (!res.ok) throw new ApiRequestError(res.status);
   window.open(URL.createObjectURL(await res.blob()), '_blank', 'noopener');
 }

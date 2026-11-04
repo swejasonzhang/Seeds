@@ -74,74 +74,102 @@ export function AutoMatchPage() {
 
       {plan && (
         <>
-          <div className="mb-6 grid gap-4 sm:grid-cols-3">
+          <div className="stagger mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <StatTile label="Matched" value={plan.matched} context={`of ${plan.proposals.length} children in priority order`} />
             <StatTile label="Need a coordinator" value={plan.unmatched} status={plan.unmatched > 0 ? 'warning' : 'neutral'} context="No therapist fits yet; reasons below" />
             <StatTile label="Driving saved" value={`${(plan.estimatedMinutesSaved / 60).toFixed(1)} h/wk`} context="vs. a dedicated trip for every child" />
           </div>
 
           <div className="card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="border-b border-cream-200 text-xs font-bold uppercase tracking-wider text-ink-500">
-                  <tr>
-                    <th className="w-12 px-5 py-3" />
-                    <th className="w-10 py-3">#</th>
-                    <th className="px-3 py-3">Child</th>
-                    <th className="hidden px-3 py-3 lg:table-cell">Priority</th>
-                    <th className="px-3 py-3">Proposed therapist &amp; time</th>
-                    <th className="hidden px-3 py-3 md:table-cell">Added drive</th>
-                    <th className="px-3 py-3">Fit</th>
-                    <th className="px-3 py-3">Result</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-cream-200">
-                  {plan.proposals.map((p, i) => {
-                    const r = results[p.caseId];
-                    return (
-                      <tr key={p.caseId} className={cn(!p.suggestion && 'bg-amber-50/40')}>
-                        <td className="px-5 py-3">
-                          {p.suggestion && r !== true && <Checkbox checked={selected.has(p.caseId)} onCheckedChange={(v) => toggle(p.caseId, v)} label={<span className="sr-only">Select {p.childName}</span>} />}
-                        </td>
-                        <td className="py-3 font-bold text-ink-500">{i + 1}</td>
-                        <td className="px-3 py-3">
-                          <div className="flex items-center gap-3">
-                            <Avatar name={p.childName} size="sm" />
-                            <div>
-                              <Link to={`/staff/cases/${p.caseId}`} className="font-bold text-ink-900 hover:underline">{p.childName}</Link> <DisciplineBadge discipline={p.discipline} />
-                              <p className="text-xs text-ink-500">{p.town} · {p.effectiveWaitDays}d effective wait</p>
-                            </div>
+            <ul className="divide-y divide-cream-200 lg:hidden">
+              {plan.proposals.map((p, i) => {
+                const r = results[p.caseId];
+                return (
+                  <li key={p.caseId} className={cn('scroll-in flex gap-3 p-4', !p.suggestion && 'bg-amber-50/40')}>
+                    <div className="w-5 shrink-0 pt-1">
+                      {p.suggestion && r !== true && <Checkbox checked={selected.has(p.caseId)} onCheckedChange={(v) => toggle(p.caseId, v)} label={<span className="sr-only">Select {p.childName}</span>} />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <Link to={`/staff/cases/${p.caseId}`} className="font-bold text-ink-900 hover:underline">{i + 1}. {p.childName}</Link>
+                        {p.suggestion && <span className="shrink-0 rounded-lg bg-seed-50 px-2 py-0.5 text-xs font-black text-seed-800">Fit {p.suggestion.score}</span>}
+                      </div>
+                      <p className="text-xs text-ink-500">{p.town} · {p.effectiveWaitDays}d effective wait</p>
+                      {p.suggestion ? (
+                        <div className="mt-2 rounded-xl bg-cream-50 p-3 text-sm">
+                          <p className="font-bold text-ink-900">{p.suggestion.therapistName}</p>
+                          <p className="text-xs text-ink-500">{p.suggestion.slots.map(slotLabel).join(' · ')} · {SETTING_LABEL[p.suggestion.setting]}{isTravelSetting(p.suggestion.setting) ? ` · +${Math.round(p.suggestion.addedTravelMinutes)} min drive` : ''}</p>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-xs font-semibold text-amber-800">No match: {Object.entries(p.exclusions).map(([k, n]) => `${k} (${n})`).join(', ')}</p>
+                      )}
+                      {r === true && <p className="mt-2 inline-flex items-center gap-1 text-xs font-bold text-seed-700"><CheckmarkCircleRegular /> Booked</p>}
+                      {r && r !== true && <p className="mt-2 text-xs font-semibold text-red-700">{r}</p>}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+
+            <table className="hidden w-full text-left text-sm lg:table">
+              <thead className="border-b border-cream-200 text-xs font-bold uppercase tracking-wider text-ink-500">
+                <tr>
+                  <th className="w-12 py-3 pl-5" />
+                  <th className="w-10 py-3">#</th>
+                  <th className="px-3 py-3">Child</th>
+                  <th className="hidden px-3 py-3 2xl:table-cell">Priority</th>
+                  <th className="px-3 py-3">Proposed therapist &amp; time</th>
+                  <th className="hidden px-3 py-3 xl:table-cell">Added drive</th>
+                  <th className="px-3 py-3">Fit</th>
+                  <th className="px-3 py-3">Result</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-cream-200">
+                {plan.proposals.map((p, i) => {
+                  const r = results[p.caseId];
+                  return (
+                    <tr key={p.caseId} className={cn('scroll-in', !p.suggestion && 'bg-amber-50/40')}>
+                      <td className="py-3 pl-5">
+                        {p.suggestion && r !== true && <Checkbox checked={selected.has(p.caseId)} onCheckedChange={(v) => toggle(p.caseId, v)} label={<span className="sr-only">Select {p.childName}</span>} />}
+                      </td>
+                      <td className="py-3 font-bold text-ink-500">{i + 1}</td>
+                      <td className="px-3 py-3">
+                        <div className="flex items-center gap-3">
+                          <Avatar name={p.childName} size="sm" />
+                          <div className="min-w-0">
+                            <Link to={`/staff/cases/${p.caseId}`} className="font-bold text-ink-900 hover:underline">{p.childName}</Link> <DisciplineBadge discipline={p.discipline} />
+                            <p className="text-xs text-ink-500">{p.town} · {p.effectiveWaitDays}d effective wait</p>
                           </div>
-                        </td>
-                        <td className="hidden px-3 py-3 lg:table-cell"><PriorityChips factors={p.priorityFactors} /></td>
-                        <td className="px-3 py-3">
-                          {p.suggestion ? (
-                            <>
-                              <p className="font-bold text-ink-900">{p.suggestion.therapistName}</p>
-                              <p className="text-xs text-ink-500">{p.suggestion.slots.map(slotLabel).join(' · ')} · {SETTING_LABEL[p.suggestion.setting]}</p>
-                              <p className="text-xs text-ink-500">{p.suggestion.reasons[0]}</p>
-                            </>
-                          ) : (
-                            <p className="text-xs font-semibold text-amber-800">No match: {Object.entries(p.exclusions).map(([k, n]) => `${k} (${n})`).join(', ')}</p>
-                          )}
-                        </td>
-                        <td className="hidden px-3 py-3 md:table-cell">
-                          {p.suggestion && (isTravelSetting(p.suggestion.setting) ? <span className="chip"><VehicleCarRegular /> +{Math.round(p.suggestion.addedTravelMinutes)} min</span> : <span className="text-xs text-ink-500">none</span>)}
-                        </td>
-                        <td className="px-3 py-3 font-black text-ink-900">{p.suggestion?.score}</td>
-                        <td className="px-3 py-3">
-                          {r === true ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-seed-700"><CheckmarkCircleRegular /> Booked</span>
-                          ) : r ? (
-                            <span className="inline-flex items-start gap-1 text-xs font-semibold text-red-700"><ErrorCircleRegular className="mt-0.5 shrink-0" /> {r}</span>
-                          ) : null}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                        </div>
+                      </td>
+                      <td className="hidden px-3 py-3 2xl:table-cell"><PriorityChips factors={p.priorityFactors} /></td>
+                      <td className="px-3 py-3">
+                        {p.suggestion ? (
+                          <>
+                            <p className="font-bold text-ink-900">{p.suggestion.therapistName}</p>
+                            <p className="text-xs text-ink-500">{p.suggestion.slots.map(slotLabel).join(' · ')} · {SETTING_LABEL[p.suggestion.setting]}</p>
+                            <p className="text-xs text-ink-500">{p.suggestion.reasons[0]}</p>
+                          </>
+                        ) : (
+                          <p className="text-xs font-semibold text-amber-800">No match: {Object.entries(p.exclusions).map(([k, n]) => `${k} (${n})`).join(', ')}</p>
+                        )}
+                      </td>
+                      <td className="hidden px-3 py-3 xl:table-cell">
+                        {p.suggestion && (isTravelSetting(p.suggestion.setting) ? <span className="chip"><VehicleCarRegular /> +{Math.round(p.suggestion.addedTravelMinutes)} min</span> : <span className="text-xs text-ink-500">none</span>)}
+                      </td>
+                      <td className="px-3 py-3 font-black text-ink-900">{p.suggestion?.score}</td>
+                      <td className="px-3 py-3">
+                        {r === true ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-seed-700"><CheckmarkCircleRegular /> Booked</span>
+                        ) : r ? (
+                          <span className="inline-flex items-start gap-1 text-xs font-semibold text-red-700"><ErrorCircleRegular className="mt-0.5 shrink-0" /> {r}</span>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
 
           {pending.length > 0 && (

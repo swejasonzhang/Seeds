@@ -1,6 +1,6 @@
 {
   "child": { "firstName": "Ci", "lastName": "Smoketest", "dateOfBirth": "2022-02-02", "preferredLanguage": "English" },
-  "guardian": { "firstName": "Pat", "lastName": "Smoketest", "relationship": "Parent", "phone": "(516) 555-0100", "email": "ci@example.com" },
+  "guardian": { "firstName": "Pat", "lastName": "Smoketest", "relationship": "Parent", "phone": "(516) 555-0199", "email": "ci@example.com" },
   "address": { "line1": "10 Hillside Ave", "city": "Williston Park", "state": "NY", "postalCode": "11596" },
   "services": ["speech"],
   "concerns": "Fictional CI smoke-test submission.",

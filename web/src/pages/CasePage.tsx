@@ -32,7 +32,7 @@ export function CasePage() {
         <ArrowLeftRegular /> Back to queue
       </Link>
 
-      <div className="card mb-6 overflow-hidden">
+      <div className="card mb-6 animate-rise overflow-hidden">
         <div className="flex flex-col gap-5 p-5 sm:flex-row sm:items-start sm:p-6">
           <Avatar name={d.childName} size="lg" tone="dark" />
           <div className="min-w-0 flex-1">
@@ -61,12 +61,12 @@ export function CasePage() {
 
       {d.status === 'needs-review' && <ReviewBar c={d} />}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+        <div className="min-w-0 space-y-6">
           {d.status === 'scheduled' ? <SessionsCard c={d} /> : d.status !== 'closed' && <MatchesCard c={d} />}
           <ChecklistCard c={d} />
         </div>
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <FamilyCard c={d} />
           <PlanCard c={d} />
           <DocumentsCard c={d} />
@@ -79,10 +79,10 @@ export function CasePage() {
 
 function Fact({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
   return (
-    <div className="border-cream-200 px-5 py-3 [&:not(:last-child)]:border-r">
+    <div className="border-b border-cream-200 px-5 py-3 sm:border-b-0 [&:not(:last-child)]:border-r">
       <dt className="text-[11px] font-extrabold uppercase tracking-wider text-ink-500">{label}</dt>
-      <dd className="mt-0.5 truncate font-bold text-ink-900">{value}</dd>
-      {sub && <dd className="truncate text-xs text-ink-500">{sub}</dd>}
+      <dd className="mt-0.5 break-words font-bold text-ink-900">{value}</dd>
+      {sub && <dd className="break-words text-xs text-ink-500">{sub}</dd>}
     </div>
   );
 }
@@ -91,7 +91,7 @@ function ChecklistCard({ c }: { c: CaseDetail }) {
   const actions = useCaseActions(c.id);
   const notify = useNotify();
   return (
-    <div className="card card-pad">
+    <div className="scroll-in card card-pad">
       <SectionTitle title="Family checklist" description="Shared with the family portal. Families sign, upload and report district steps; you can mark anything here. Completing the required steps moves the case to Ready automatically." />
       <JourneyProgress journey={c.journey} />
       <div className="mt-6">
@@ -114,9 +114,9 @@ function ChecklistCard({ c }: { c: CaseDetail }) {
 
 function FamilyCard({ c }: { c: CaseDetail }) {
   return (
-    <div className="card card-pad">
+    <div className="scroll-in card card-pad">
       <SectionTitle title="What the family told us" />
-      <dl className="grid grid-cols-[110px_1fr] gap-x-4 gap-y-3 text-sm">
+      <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-x-3 gap-y-3 text-sm sm:grid-cols-[110px_minmax(0,1fr)] sm:gap-x-4">
         <dt className="text-ink-500">Child</dt>
         <dd className="text-ink-900">{c.child.firstName} {c.child.lastName} · DOB {formatDate(c.child.dateOfBirth)} · {c.child.preferredLanguage}</dd>
         <dt className="text-ink-500">Address</dt>
@@ -179,16 +179,16 @@ function PlanCard({ c }: { c: CaseDetail }) {
     actions.plan.mutate(b, { onSuccess: () => notify('Care plan updated'), onError: (e) => notify('Could not update', 'error', errorMessage(e)) });
   const settings: SessionSetting[] = c.preferredSetting === 'community' ? ['home', 'clinic', 'telehealth', 'community'] : ['home', 'clinic', 'telehealth'];
   return (
-    <div className="card card-pad">
+    <div className="scroll-in card card-pad">
       <SectionTitle title="Care plan & availability" description={editable ? 'Changes re-rank matches instantly.' : 'Return the case to the queue to edit.'} />
-      <div className="grid grid-cols-3 gap-3">
-        <Field label="Sessions/wk">
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Sessions / week">
           <Select disabled={!editable} value={String(c.sessionsPerWeek)} onValueChange={(v) => update({ sessionsPerWeek: Number(v) })} options={['1', '2', '3'].map((n) => ({ value: n, label: n }))} />
         </Field>
         <Field label="Minutes">
           <Select disabled={!editable} value={String(c.sessionMinutes)} onValueChange={(v) => update({ sessionMinutes: Number(v) as 30 | 45 | 60 })} options={['30', '45', '60'].map((n) => ({ value: n, label: `${n} min` }))} />
         </Field>
-        <Field label="Setting">
+        <Field label="Setting" className="col-span-2">
           <Select disabled={!editable || c.preferredSetting === 'community'} value={c.preferredSetting} onValueChange={(v) => update({ preferredSetting: v as 'home' | 'clinic' | 'telehealth' })} options={settings.map((x) => ({ value: x, label: SETTING_LABEL[x] }))} />
         </Field>
       </div>
@@ -206,7 +206,7 @@ function PlanCard({ c }: { c: CaseDetail }) {
 
 function DocumentsCard({ c }: { c: CaseDetail }) {
   return (
-    <div className="card card-pad">
+    <div className="scroll-in card card-pad">
       <SectionTitle title="Documents" description="Uploaded by the family from their portal." />
       {c.documents.length === 0 ? (
         <p className="text-sm text-ink-500">No documents yet.</p>
@@ -230,11 +230,13 @@ function DocumentsCard({ c }: { c: CaseDetail }) {
 }
 
 function ActivityCard({ c }: { c: CaseDetail }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? c.events : c.events.slice(0, 6);
   return (
-    <div className="card card-pad">
+    <div className="scroll-in card card-pad">
       <SectionTitle title="Activity" description="Append-only audit trail." />
-      <ol className="relative max-h-96 space-y-4 overflow-y-auto border-l-2 border-cream-200 pl-5">
-        {c.events.map((e, i) => (
+      <ol className="relative space-y-4 border-l-2 border-cream-200 pl-5">
+        {shown.map((e, i) => (
           <li key={i} className="relative">
             <span className="absolute -left-[27px] top-1 h-3 w-3 rounded-full bg-seed-300 ring-4 ring-white" />
             <p className="text-sm font-semibold text-ink-900">{e.message}</p>
@@ -242,6 +244,11 @@ function ActivityCard({ c }: { c: CaseDetail }) {
           </li>
         ))}
       </ol>
+      {c.events.length > 6 && (
+        <Button variant="ghost" size="sm" className="mt-3" onClick={() => setAll(!all)}>
+          {all ? 'Show recent only' : `Show all ${c.events.length} events`}
+        </Button>
+      )}
     </div>
   );
 }
@@ -258,7 +265,7 @@ function MatchesCard({ c }: { c: CaseDetail }) {
     );
 
   return (
-    <div className="card card-pad">
+    <div className="scroll-in card card-pad">
       <SectionTitle
         title="Best therapist matches"
         description={`Ranked by the driving each slot adds to the therapist’s existing route, caseload balance, language and sibling continuity.${matches.data ? ` Drive times: ${matches.data.travelSource === 'azure-maps' ? 'Azure Maps' : 'estimated'}.` : ''}`}
@@ -268,7 +275,7 @@ function MatchesCard({ c }: { c: CaseDetail }) {
       {matches.isError && <ErrorBar error={matches.error} />}
       <div className="space-y-3">
         {matches.data?.suggestions.map((m, i) => (
-          <div key={m.therapistId} className={cn('rounded-2xl border p-4 transition hover:shadow-card', i === 0 ? 'border-seed-300 bg-seed-50/60' : 'border-cream-200 bg-white')}>
+          <div key={m.therapistId} style={{ animationDelay: `${i * 70}ms` }} className={cn('animate-rise rounded-2xl border p-4 transition hover:shadow-card', i === 0 ? 'border-seed-300 bg-seed-50/60' : 'border-cream-200 bg-white')}>
             <div className="flex flex-wrap items-start gap-4">
               <div className={cn('grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-xl font-black', i === 0 ? 'bg-seed-500 text-white' : 'bg-cream-200 text-seed-950')} aria-label={`Fit score ${m.score}`}>{m.score}</div>
               <div className="min-w-0 flex-1">
@@ -307,7 +314,7 @@ function SessionsCard({ c }: { c: CaseDetail }) {
   const notify = useNotify();
   const [reason, setReason] = useState('');
   return (
-    <div className="card card-pad">
+    <div className="scroll-in card card-pad">
       <SectionTitle title="Standing sessions" description={`With ${c.assignedTherapistName}`} />
       <div className="space-y-3">
         {c.appointments.map((a) => (

@@ -30,4 +30,6 @@ services:
       #   AZURE_MAPS_KEY                         real drive times + rooftop geocoding
       #   APPLICATIONINSIGHTS_CONNECTION_STRING  telemetry
       #   ENTRA_TENANT_ID / ENTRA_API_AUDIENCE / ENTRA_API_CLIENT_ID / ENTRA_SPA_CLIENT_ID / ENTRA_API_SCOPE
+      #     → "Sign in with Microsoft" (works alongside demo accounts while AUTH_MODE=demo; see README)
+      #   ENTRA_DEFAULT_ROLE=admin   demo only: lets reviewers open the staff portal with their own Microsoft account
       #   GRAPH_CALENDAR_SYNC=true + GRAPH_CLIENT_ID / GRAPH_CLIENT_SECRET   Outlook calendar sync

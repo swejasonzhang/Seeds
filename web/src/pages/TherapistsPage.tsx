@@ -29,11 +29,11 @@ export function TherapistsPage() {
           <TabsTrigger value="ot" count={count('ot')}>Occupational</TabsTrigger>
         </TabsList>
       </Tabs>
-      <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
         {items.map((t) => {
           const open = t.weeklyCapacity - t.sessionsBooked;
           return (
-            <Link key={t.id} to={`/staff/therapists/${t.id}`} className="card card-pad group block transition hover:-translate-y-0.5 hover:shadow-lift">
+            <Link key={t.id} to={`/staff/therapists/${t.id}`} className="scroll-in card card-pad lift group block">
               <div className="flex items-start gap-4">
                 <Avatar name={t.name} size="lg" tone={t.discipline === 'speech' ? 'dark' : 'olive'} />
                 <div className="min-w-0 flex-1">
@@ -85,13 +85,13 @@ export function TherapistPage() {
           <p className="text-sm text-ink-500">{d.homeBaseLabel} · {d.languages.join(', ')} · {d.email}</p>
         </div>
       </div>
-      <div className="mb-6 grid gap-4 sm:grid-cols-3">
+      <div className="stagger mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatTile label="Sessions booked" value={`${d.sessionsBooked} / ${d.weeklyCapacity}`} context={<Meter value={d.sessionsBooked} max={d.weeklyCapacity} label="Caseload" size="sm" />} />
         <StatTile label="Open slots this week" value={Math.max(0, d.weeklyCapacity - d.sessionsBooked)} context={`Travels up to ${d.maxOneWayTravelMinutes} min one way`} />
         <StatTile label="Driving per week" value={`${(d.weeklyDriveMinutes / 60).toFixed(1)} h`} context="Across all route days" />
       </div>
-      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <div className="card card-pad">
+      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <div className="scroll-in card card-pad min-w-0">
           <h2 className="mb-1 text-base font-extrabold text-seed-950">Week at a glance</h2>
           <p className="mb-4 text-xs text-ink-500">Availability (set by the therapist) and standing sessions. Click a session to open the case.</p>
           <WeekGrid availability={d.availability} appointments={d.appointments} caseHref={(a) => `/staff/cases/${a.caseId}`} />

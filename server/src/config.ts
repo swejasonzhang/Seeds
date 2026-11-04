@@ -18,7 +18,20 @@ export interface AppConfig {
   timeZone: string;
   staticDir?: string;
   seedDemoData: boolean;
-  auth: { mode: AuthMode; tenantId?: string; audience?: string; clientId?: string; spaClientId?: string; apiScope?: string };
+  auth: {
+    mode: AuthMode;
+    tenantId?: string;
+    audience?: string;
+    clientId?: string;
+    spaClientId?: string;
+    apiScope?: string;
+    /** Sign-in authority for the SPA; defaults to https://login.microsoftonline.com/<tenant>. */
+    authority?: string;
+    /** Demo only: role given to Microsoft accounts that have no app role and aren't linked to a therapist or family. */
+    defaultRole?: 'coordinator' | 'admin' | 'therapist';
+    /** True when every setting needed for Microsoft sign-in is present. */
+    entraEnabled: boolean;
+  };
   azureMaps: { key?: string; clientId?: string };
   graph: { enabled: boolean; tenantId?: string; clientId?: string; clientSecret?: string; windowsTimeZone: string };
   appInsightsConnectionString?: string;
@@ -44,6 +57,9 @@ export function loadConfig(): AppConfig {
       clientId: env.ENTRA_API_CLIENT_ID,
       spaClientId: env.ENTRA_SPA_CLIENT_ID,
       apiScope: env.ENTRA_API_SCOPE, // e.g. api://<api-app-client-id>/access_as_user
+      authority: env.ENTRA_AUTHORITY,
+      defaultRole: (['coordinator', 'admin', 'therapist'] as const).find((r) => r === env.ENTRA_DEFAULT_ROLE),
+      entraEnabled: false,
     },
     azureMaps: { key: env.AZURE_MAPS_KEY, clientId: env.AZURE_MAPS_CLIENT_ID },
     graph: {
@@ -76,7 +92,9 @@ export function loadConfig(): AppConfig {
     },
   };
 
-  if (cfg.auth.mode === 'entra' && (!cfg.auth.tenantId || !cfg.auth.audience || !cfg.auth.spaClientId || !cfg.auth.apiScope)) {
+  cfg.auth.entraEnabled = Boolean(cfg.auth.tenantId && cfg.auth.audience && cfg.auth.spaClientId && cfg.auth.apiScope);
+  cfg.auth.authority ??= cfg.auth.tenantId ? `https://login.microsoftonline.com/${cfg.auth.tenantId}` : undefined;
+  if (cfg.auth.mode === 'entra' && !cfg.auth.entraEnabled) {
     throw new Error(
       'AUTH_MODE=entra requires ENTRA_TENANT_ID, ENTRA_API_AUDIENCE, ENTRA_SPA_CLIENT_ID and ENTRA_API_SCOPE. ' +
         'Use AUTH_MODE=demo only with fictional demo data.',

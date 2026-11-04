@@ -17,7 +17,12 @@ import { newSubmissionCode } from './codes.ts';
 import { event } from './mappers.ts';
 
 const key = (s: string) => s.trim().toLowerCase().normalize('NFKD').replace(/[^\p{L}\p{N}]/gu, '');
-export const householdKeyFor = (phone: string) => phone.replace(/\D/g, '').slice(-10);
+const phoneDigits = (phone: string) => phone.replace(/\D/g, '').slice(-10);
+/**
+ * A household is phone + guardian last name, not phone alone: a mistyped or shared number must never let one family
+ * see another family's children in the portal.
+ */
+export const householdKeyFor = (phone: string, guardianLastName: string) => `${phoneDigits(phone)}-${key(guardianLastName)}`;
 
 /**
  * Turn a family's online submission into queue-ready cases:
@@ -27,7 +32,7 @@ export const householdKeyFor = (phone: string) => phone.replace(/\D/g, '').slice
 export async function submitIntake(input: ValidIntake, s: Services): Promise<IntakeResult> {
   const now = s.now();
   const receivedDate = isoDateInZone(now, s.config.timeZone);
-  const householdKey = householdKeyFor(input.guardian.phone);
+  const householdKey = householdKeyFor(input.guardian.phone, input.guardian.lastName);
   const guardian = {
     firstName: input.guardian.firstName,
     lastName: input.guardian.lastName,
@@ -52,7 +57,7 @@ export async function submitIntake(input: ValidIntake, s: Services): Promise<Int
     child.geocodePrecision = home?.precision;
     child.preferredLanguage = input.child.preferredLanguage;
     child.householdKey = householdKey;
-    if (!child.guardians.some((g) => householdKeyFor(g.phone ?? '') === householdKey)) child.guardians.push(guardian);
+    if (!child.guardians.some((g) => phoneDigits(g.phone ?? '') === phoneDigits(guardian.phone))) child.guardians.push(guardian);
     await child.save();
   } else {
     child = await Child.create({

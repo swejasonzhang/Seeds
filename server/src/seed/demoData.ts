@@ -138,7 +138,7 @@ export async function seedDemoData(s: Services, childCount = 90): Promise<SeedSu
       address: { line1, city: town.town, state: 'NY', postalCode: zip },
       location: toPoint(point),
       geocodePrecision: 'demo',
-      householdKey: phone.replace(/\D/g, '').slice(-10),
+      householdKey: `${phone.replace(/\D/g, '').slice(-10)}-${last.toLowerCase()}`,
       guardians: [{ firstName: guardianFirst, lastName: last, relationship: chance(0.8) ? 'Mother' : 'Father', phone, email: `${guardianFirst.toLowerCase()}.${last.toLowerCase()}@example.com`, isPrimary: true }],
     });
 
@@ -210,7 +210,7 @@ export async function seedDemoData(s: Services, childCount = 90): Promise<SeedSu
         childName: `${first} ${last}`,
         childDob: dob,
         town: town.town,
-        householdKey: phone.replace(/\D/g, '').slice(-10),
+        householdKey: `${phone.replace(/\D/g, '').slice(-10)}-${last.toLowerCase()}`,
         preferredLanguage: language,
         searchKey: `${first} ${last} ${referenceCode} ${last}`.toLowerCase(),
         discipline,
@@ -315,16 +315,37 @@ export async function seedDemoData(s: Services, childCount = 90): Promise<SeedSu
   return { therapists: therapistDocs.length, children: childDocs.length, cases: drafts.length, appointments: appointments.length };
 }
 
-/** Seed once per database, even if several instances boot at the same moment. */
+/** Bump whenever the demo data shape changes, so deployed demos refresh themselves on the next boot. */
+export const DEMO_SEED_VERSION = 3;
+
+/**
+ * Demo mode only: make sure the fictional data matches this build. Exactly one instance wins an atomic claim on the
+ * meta document (an older version, or no document at all); everyone else sees a duplicate key and skips.
+ * Never runs with AUTH_MODE=entra, so real data can't be wiped.
+ */
 export async function seedIfEmpty(s: Services) {
-  if ((await Therapist.estimatedDocumentCount()) > 0) return;
-  try {
-    await Meta.create({ _id: 'demo-seed', at: new Date() });
-  } catch {
-    return; // another instance holds the lock
+  if (s.config.auth.mode !== 'demo') {
+    s.log.warn('SEED_DEMO_DATA ignored: fictional data is only seeded in AUTH_MODE=demo');
+    return;
   }
+  try {
+    await Meta.findOneAndUpdate(
+      { _id: 'demo-seed', version: { $ne: DEMO_SEED_VERSION } },
+      { $set: { version: DEMO_SEED_VERSION, at: new Date() } },
+      { upsert: true },
+    );
+  } catch {
+    return; // already at this version (or another instance is seeding it)
+  }
+  await clearDemoCollections();
   const summary = await seedDemoData(s);
-  s.log.info(summary, 'Seeded demo data');
+  s.log.info({ ...summary, version: DEMO_SEED_VERSION }, 'Seeded demo data');
+}
+
+async function clearDemoCollections() {
+  await Promise.all([Child.deleteMany({}), IntakeCase.deleteMany({}), Therapist.deleteMany({}), Appointment.deleteMany({}), CaseDocument.deleteMany({})]);
+  const db = mongoose.connection.db!;
+  await Promise.all(['documents.files', 'documents.chunks'].map((c) => db.collection(c).deleteMany({})));
 }
 
 export async function resetDatabase() {

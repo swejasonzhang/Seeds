@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { CallRegular, DocumentRegular, LocationRegular, MailRegular, PeopleListRegular, SaveRegular, TranslateRegular, WarningRegular } from '@fluentui/react-icons';
 import { DISCIPLINE_LABEL, DOCUMENT_LABEL, FUNDING_LABEL, SETTING_LABEL, formatMinute, type TherapistPortalDto } from '@seeds/shared';
 import { ApiRequestError, errorMessage, openDocument, useMyRoute, useTherapistPortal, useUpdateAvailability } from '../api';
-import { useNotify } from '../toast';
 import { ErrorBar, Loading, formatAge, slotLabel } from '../components/bits';
 import { Alert, Avatar, Button } from '../components/kit';
 import { EmptyState, Meter, PageHeader, StatTile } from '../components/ui';
@@ -37,14 +36,14 @@ export function TherapistWeekPage() {
   return (
     <>
       <PageHeader eyebrow="Therapist portal" title={`${greeting()}, ${persona?.name.split(' ')[0] ?? ''}`} description={todays.length ? `You have ${todays.length} session${todays.length === 1 ? '' : 's'} today, starting ${formatMinute(Math.min(...todays.map((a) => a.start)))}.` : 'No sessions today.'} />
-      <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="stagger mb-6 grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatTile label="Children on caseload" value={caseload.length} context={`${DISCIPLINE_LABEL[t.discipline]}`} />
         <StatTile label="Weekly sessions" value={`${t.sessionsBooked} / ${t.weeklyCapacity}`} context={<Meter value={t.sessionsBooked} max={t.weeklyCapacity} label="Caseload" size="sm" />} />
         <StatTile label="Today" value={todays.length} context={todays.length ? todays.map((a) => formatMinute(a.start)).join(' · ') : 'Free day'} />
         <StatTile label="Travel radius" value={`${t.maxOneWayTravelMinutes} min`} context={`From ${t.homeBaseLabel}`} />
       </div>
-      <div className="grid gap-6 2xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
-        <div className="card card-pad">
+      <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+        <div className="scroll-in card card-pad min-w-0">
           <h2 className="mb-1 text-base font-extrabold text-seed-950">My week</h2>
           <p className="mb-4 text-xs text-ink-500">Standing sessions on top of the hours you’ve made available.</p>
           <WeekGrid availability={t.availability} appointments={t.appointments} caseHref={(a) => `/therapist/caseload#${a.caseId}`} />
@@ -70,9 +69,9 @@ export function CaseloadPage() {
     <>
       <PageHeader eyebrow="Therapist portal" title="My caseload" description="Everything families shared at intake, plus where each child stands on their checklist. Only you, the family and the front desk can see this." />
       {caseload.length === 0 && <div className="card"><EmptyState icon={<PeopleListRegular />} title="No children assigned yet">New matches from the front desk appear here.</EmptyState></div>}
-      <div className="grid gap-5 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
         {caseload.map((c) => (
-          <article key={c.caseId} id={c.caseId} className="card scroll-mt-6 overflow-hidden">
+          <article key={c.caseId} id={c.caseId} className="scroll-in card scroll-mt-6 overflow-hidden">
             <div className="flex items-start gap-4 p-5">
               <Avatar name={c.childName} size="lg" tone="dark" />
               <div className="min-w-0 flex-1">
@@ -135,44 +134,56 @@ export function AvailabilityPage() {
 }
 
 function AvailabilityForm({ data }: { data: TherapistPortalDto }) {
-  const notify = useNotify();
   const save = useUpdateAvailability();
   const original = useMemo(() => windowsToCells(data.therapist.availability), [data.therapist.availability]);
   const [cells, setCells] = useState(original);
   const [conflict, setConflict] = useState<string | null>(null);
+  const [state, setState] = useState<'saved' | 'pending' | 'saving' | 'error'>('saved');
   const dirty = cells.size !== original.size || [...cells].some((c) => !original.has(c));
   const hours = cells.size / 2;
+
+  // Autosave shortly after the therapist stops painting.
+  useEffect(() => {
+    if (!dirty) return;
+    setState('pending');
+    const t = setTimeout(() => {
+      setState('saving');
+      save.mutate(cellsToWindows(cells), {
+        onSuccess: () => { setConflict(null); setState('saved'); },
+        onError: (e) => { setState('error'); setConflict(e instanceof ApiRequestError && e.status === 409 ? errorMessage(e) : `Couldn’t save: ${errorMessage(e)}`); },
+      });
+    }, 900);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cells]);
+
+  const status = {
+    saved: <span className="inline-flex items-center gap-1.5 font-semibold text-seed-700"><SaveRegular /> All changes saved</span>,
+    pending: <span className="font-semibold text-ink-500">Unsaved changes…</span>,
+    saving: <span className="font-semibold text-ink-500">Saving…</span>,
+    error: <span className="font-semibold text-amber-800">Not saved</span>,
+  }[state];
 
   return (
     <>
       <PageHeader
         eyebrow="Therapist portal"
         title="My availability"
-        description="Paint the hours you can see children each week. The front desk only books inside these hours, and matching uses them to plan your routes."
+        description="Paint the hours you can see children each week. Changes save automatically; the front desk only books inside these hours, and matching uses them to plan your routes."
         actions={
-          <>
-            <Button variant="secondary" disabled={!dirty || save.isPending} onClick={() => { setCells(original); setConflict(null); }}>Reset</Button>
-            <Button
-              disabled={!dirty || save.isPending}
-              onClick={() =>
-                save.mutate(cellsToWindows(cells), {
-                  onSuccess: () => { setConflict(null); notify('Availability saved', 'success', 'New matches will use these hours.'); },
-                  onError: (e) => { if (e instanceof ApiRequestError && e.status === 409) setConflict(errorMessage(e)); else notify('Could not save', 'error', errorMessage(e)); },
-                })
-              }
-            >
-              <SaveRegular /> {save.isPending ? 'Saving…' : 'Save availability'}
-            </Button>
-          </>
+          <div className="flex items-center gap-3 text-sm" aria-live="polite">
+            {status}
+            <Button variant="secondary" size="sm" disabled={!dirty && state !== 'error'} onClick={() => { setCells(original); setConflict(null); setState('saved'); }}>Undo changes</Button>
+          </div>
         }
       />
       {conflict && <Alert tone="warning" title="Some booked sessions fall outside these hours" className="mb-5">{conflict}</Alert>}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div className="card card-pad">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="card card-pad min-w-0">
           <AvailabilityEditor value={cells} onChange={setCells} booked={data.therapist.appointments} />
         </div>
         <div className="space-y-4">
-          <StatTile label="Available hours per week" value={hours} context={dirty ? 'Unsaved changes' : 'Saved'} />
+          <StatTile label="Available hours per week" value={hours} context="Across Monday to Saturday" />
           <div className="card card-pad text-sm text-ink-700">
             <p className="font-extrabold text-seed-950">Tips</p>
             <ul className="mt-2 list-disc space-y-1.5 pl-4">

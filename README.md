@@ -105,6 +105,27 @@ The free plan sleeps when idle (first request takes ~1 minute). Use `starter` or
 instances to scale out. The API is stateless, bookings use optimistic concurrency, and the calendar outbox uses
 atomic claims, so multiple instances are safe.
 
+## Microsoft sign-in (Entra ID)
+
+The web app uses MSAL (redirect flow with PKCE). The API validates every token (signature via Microsoft's
+JWKS, audience, issuer) and maps it to a portal: **app roles** first (`Intake.Coordinator`, `Clinical.Therapist`,
+`Practice.Admin`), then **therapist by Microsoft 365 email**, then **parent by the guardian email on file**.
+
+1. **API app registration** ("SEEDS API"): *Expose an API* → Application ID URI `api://<api-client-id>` → add scope
+   `access_as_user`. *App roles*: `Intake.Coordinator`, `Clinical.Therapist`, `Practice.Admin`. In the manifest set
+   `"requestedAccessTokenVersion": 2`.
+2. **SPA app registration** ("SEEDS web"): platform *Single-page application*, redirect URIs
+   `https://<your-site>/sign-in` and `http://localhost:5173/sign-in`. *API permissions* → SEEDS API →
+   `access_as_user` → grant admin consent.
+3. *Enterprise applications* → SEEDS API → *Users and groups*: assign staff and therapists to roles.
+4. Set on the server (Render → Environment): `ENTRA_TENANT_ID`, `ENTRA_API_CLIENT_ID`, `ENTRA_API_AUDIENCE`
+   (`api://<api-client-id>`), `ENTRA_API_SCOPE` (`api://<api-client-id>/access_as_user`), `ENTRA_SPA_CLIENT_ID`.
+   - `AUTH_MODE=demo` + these → **hybrid**: "Sign in with Microsoft" *and* the demo accounts.
+   - `AUTH_MODE=entra` → Microsoft only (required for real data).
+   - For any work/school **and personal** Microsoft account, use `ENTRA_TENANT_ID=common` and register both apps
+     for "Accounts in any organizational directory and personal Microsoft accounts".
+   - Demo only: `ENTRA_DEFAULT_ROLE=admin` lets reviewers open the staff portal with their own account.
+
 ## Scaling notes
 
 - Queue reads are index-backed (`status, discipline, queueSortKey`) with denormalized child fields: no joins.

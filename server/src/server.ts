@@ -2,7 +2,7 @@ import './telemetry.ts';
 import mongoose from 'mongoose';
 import { pino } from 'pino';
 import { loadConfig } from './config.ts';
-import { connectDb } from './db/models.ts';
+import { connectDbWithRetry } from './db/models.ts';
 import { createApp } from './app.ts';
 import { createGeocoder, createTravelService } from './services/geo.ts';
 import { createCalendarSync } from './services/calendarSync.ts';
@@ -16,8 +16,6 @@ async function main() {
     transport: config.isProduction ? undefined : { target: 'pino-pretty', options: { colorize: true, ignore: 'pid,hostname' } },
   });
 
-  await connectDb(config.mongoUri);
-  log.info({ authMode: config.auth.mode }, 'Connected to MongoDB');
   if (config.auth.mode === 'demo') log.warn('AUTH_MODE=demo: staff pages are open. Use only with fictional data.');
 
   const services: Services = {
@@ -28,12 +26,17 @@ async function main() {
     calendar: createCalendarSync(config, log),
     now: () => new Date(),
   };
-  if (config.seedDemoData) await seedIfEmpty(services);
-  services.calendar.start();
 
+  // Listen first so the platform detects the port and health checks work even while the database is unreachable.
   const server = createApp(services).listen(config.port, () =>
     log.info({ port: config.port, travel: services.travel.source, calendar: services.calendar.enabled }, 'SEEDS API listening'),
   );
+
+  void connectDbWithRetry(config.mongoUri, log).then(async () => {
+    log.info({ authMode: config.auth.mode }, 'Connected to MongoDB');
+    if (config.seedDemoData) await seedIfEmpty(services).catch((err) => log.error({ err }, 'Demo seed failed'));
+    services.calendar.start();
+  });
 
   const shutdown = async (signal: string) => {
     log.info({ signal }, 'Shutting down');

@@ -10,6 +10,7 @@ import { intakeSchema, type PublicConfigDto } from '@seeds/shared';
 import type { Services } from './context.ts';
 import { createAuth } from './auth.ts';
 import { errorHandler, notFound } from './errors.ts';
+import { isDbConnected } from './db/models.ts';
 import { submitIntake } from './services/intakeService.ts';
 import { caseRoutes } from './routes/cases.ts';
 import { staffRoutes } from './routes/staff.ts';
@@ -59,6 +60,12 @@ export function createApp(s: Services) {
   });
 
   const api = express.Router();
+
+  // While MongoDB is (re)connecting, fail fast with a clear 503 instead of hanging on Mongoose's command buffer.
+  api.use((req, res, next) => {
+    if (req.path === '/config' || isDbConnected()) return next();
+    res.status(503).json({ error: 'unavailable', message: 'The database is starting up or unreachable. Please try again shortly.' });
+  });
 
   // ----- public -----
   api.get('/config', (_req, res) => {

@@ -188,3 +188,39 @@ export async function connectDb(uri: string) {
   // createIndexes (not syncIndexes): safe when several instances boot at once, never drops indexes.
   await Promise.all([Child.createIndexes(), IntakeCase.createIndexes(), Therapist.createIndexes(), Appointment.createIndexes()]);
 }
+
+export const isDbConnected = () => mongoose.connection.readyState === 1;
+
+/** Human-readable reason + fix for the most common hosted-MongoDB connection failures. */
+export function explainDbError(err: unknown, uri: string): string {
+  const message = err instanceof Error ? err.message.split('\n')[0]! : String(err);
+  const atlas = uri.includes('.mongodb.net');
+  if (/auth|bad auth|authentication/i.test(message)) {
+    return `${message}. Check the username and password in MONGODB_URI (URL-encode special characters in the password).`;
+  }
+  if (atlas) {
+    return (
+      `${message}. MongoDB Atlas is not accepting connections from this server. In Atlas → Security → Network Access, ` +
+      `add this host's outbound IPs (Render: service → Connect → Outbound) or 0.0.0.0/0, then restart.`
+    );
+  }
+  return `${message}. Check that MongoDB is running and MONGODB_URI is correct.`;
+}
+
+/**
+ * Connect in the background and keep retrying with backoff. The HTTP server is already listening, so the platform
+ * sees an open port, /healthz stays green, /readyz reports 503 and the API answers 503 until the database is up.
+ */
+export async function connectDbWithRetry(uri: string, log: { info: (o: object, m: string) => void; error: (o: object, m: string) => void }) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await connectDb(uri);
+      return;
+    } catch (err) {
+      const delayMs = Math.min(60_000, 2_000 * 2 ** Math.min(attempt - 1, 5));
+      log.error({ attempt, retryInSeconds: delayMs / 1000, reason: explainDbError(err, uri) }, 'MongoDB connection failed');
+      await mongoose.disconnect().catch(() => undefined);
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+}

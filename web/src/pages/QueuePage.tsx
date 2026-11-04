@@ -1,43 +1,30 @@
 import { useDeferredValue, useState } from 'react';
 import { useNavigate } from 'react-router';
-import {
-  Badge,
-  Button,
-  Card,
-  CounterBadge,
-  Input,
-  Select,
-  Tab,
-  TabList,
-  Table,
-  TableBody,
-  TableCell,
-  TableHeader,
-  TableHeaderCell,
-  TableRow,
-  Text,
-  Title2,
-  Tooltip,
-  makeStyles,
-  tokens,
-} from '@fluentui/react-components';
-import { SearchRegular, FlashRegular } from '@fluentui/react-icons';
+import { Avatar, Button, Input, Select, Tabs, TabsList, TabsTrigger, Tip } from '../components/kit';
+import { ChevronRightRegular, FlashRegular, PeopleQueueRegular, SearchRegular } from '@fluentui/react-icons';
 import { CHECKLIST_LABEL, SETTING_LABEL, STATUS_LABEL, type CaseStatus, type Discipline } from '@seeds/shared';
-import { useQueue, useQueueCounts } from '../api';
-import { DisciplineBadge, ErrorBar, Loading, PriorityChips, SlaBadge, StatusBadge, formatAge } from '../components/bits';
+import { useDashboard, useQueue, useQueueCounts } from '../api';
+import { DisciplineBadge, ErrorBar, PriorityChips, SlaBadge, StatusBadge, formatAge } from '../components/bits';
+import { EmptyState, PageHeader, SkeletonRows, StatTile } from '../components/ui';
 
 const TABS: CaseStatus[] = ['ready', 'pending-documents', 'needs-review', 'scheduled', 'on-hold', 'closed'];
 
-const useStyles = makeStyles({
-  head: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: tokens.spacingVerticalM },
-  filters: { display: 'flex', gap: tokens.spacingHorizontalM, alignItems: 'center', flexWrap: 'wrap', margin: `${tokens.spacingVerticalM} 0` },
-  row: { cursor: 'pointer' },
-  sub: { color: tokens.colorNeutralForeground3, fontSize: tokens.fontSizeBase200 },
-  pager: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: tokens.spacingVerticalM },
-});
+function KpiRow() {
+  const d = useDashboard();
+  if (!d.data) return <div className="mb-6 grid h-[116px] gap-4 sm:grid-cols-2 xl:grid-cols-5" />;
+  const k = d.data;
+  return (
+    <div className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+      <StatTile label="Ready to schedule" value={k.readyToSchedule} context={`Median wait ${k.medianWaitDaysReady} days`} />
+      <StatTile label="Waiting on paperwork" value={k.pendingDocuments} context="Authorizations, Rx, insurance" />
+      <StatTile label="Needs review" value={k.needsReview} status={k.needsReview > 0 ? 'warning' : 'neutral'} context="Address or duplicate checks" />
+      <StatTile label="Past target start" value={k.slaBreached} status={k.slaBreached > 0 ? 'critical' : 'neutral'} context={`${k.slaAtRisk} more at risk within 7 days`} />
+      <StatTile label="New referrals" value={k.intakesLast7Days} context={`Last 7 days · ${k.scheduledLast7Days} scheduled`} />
+    </div>
+  );
+}
 
 export function QueuePage() {
-  const s = useStyles();
   const nav = useNavigate();
   const [status, setStatus] = useState<CaseStatus>('ready');
   const [discipline, setDiscipline] = useState<Discipline | ''>('');
@@ -51,121 +38,138 @@ export function QueuePage() {
   const queue = useQueue({ status, discipline: discipline || undefined, q: q || undefined, sla: sla || undefined, page, pageSize });
   const pages = queue.data ? Math.max(1, Math.ceil(queue.data.total / pageSize)) : 1;
   const waiting = status !== 'scheduled' && status !== 'closed';
+  const reset = () => setPage(1);
 
   return (
     <>
-      <div className={s.head}>
-        <div>
-          <Title2>Intake queue</Title2>
-          <Text block className={s.sub}>
-            Ordered by effective wait: days waiting plus priority boosts (under 3, urgent, sibling in care, mandated EI/CPSE).
-          </Text>
-        </div>
-        <Button appearance="primary" icon={<FlashRegular />} onClick={() => nav('/auto-match')}>
-          Auto-match the queue
-        </Button>
-      </div>
+      <PageHeader
+        eyebrow="Staff portal"
+        title="Intake queue"
+        description="Ordered by effective wait: days waiting plus priority boosts for children under 3, urgent concerns, siblings already in care and mandated CPSE/CSE (IEP) services."
+        actions={
+          <Button size="lg" onClick={() => nav('/staff/auto-match')}>
+            <FlashRegular /> Auto-match the queue
+          </Button>
+        }
+      />
+      <KpiRow />
 
-      <TabList selectedValue={status} onTabSelect={(_, d) => { setStatus(d.value as CaseStatus); setPage(1); }}>
-        {TABS.map((t) => (
-          <Tab key={t} value={t}>
-            {STATUS_LABEL[t]}{' '}
-            <CounterBadge count={counts.data?.counts[t] ?? 0} showZero appearance="ghost" color={t === 'needs-review' ? 'danger' : 'informative'} />
-          </Tab>
-        ))}
-      </TabList>
-
-      <div className={s.filters}>
-        <Input contentBefore={<SearchRegular />} placeholder="Search child, family, or reference" value={search} onChange={(_, d) => { setSearch(d.value); setPage(1); }} style={{ minWidth: 300 }} />
-        <Select value={discipline} onChange={(_, d) => { setDiscipline(d.value as Discipline | ''); setPage(1); }}>
-          <option value="">All services</option>
-          <option value="speech">Speech therapy</option>
-          <option value="ot">Occupational therapy</option>
-        </Select>
-        {waiting && (
-          <Select value={sla} onChange={(_, d) => { setSla(d.value as typeof sla); setPage(1); }}>
-            <option value="">Any target date</option>
-            <option value="at-risk">At risk (≤ 7 days left)</option>
-            <option value="breached">Past target</option>
-          </Select>
-        )}
-      </div>
-
-      {queue.isError && <ErrorBar error={queue.error} />}
-      <Card>
-        {queue.isLoading ? (
-          <Loading />
-        ) : (
-          <Table size="small" aria-label="Intake queue">
-            <TableHeader>
-              <TableRow>
-                <TableHeaderCell style={{ width: 48 }}>#</TableHeaderCell>
-                <TableHeaderCell>Child</TableHeaderCell>
-                <TableHeaderCell style={{ width: 70 }}>Age</TableHeaderCell>
-                <TableHeaderCell style={{ width: 80 }}>Service</TableHeaderCell>
-                <TableHeaderCell style={{ width: 120 }}>Waiting</TableHeaderCell>
-                <TableHeaderCell>Priority</TableHeaderCell>
-                <TableHeaderCell style={{ width: 110 }}>Target</TableHeaderCell>
-                <TableHeaderCell>Location</TableHeaderCell>
-                <TableHeaderCell>{status === 'scheduled' ? 'Therapist' : 'Blocking'}</TableHeaderCell>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {queue.data?.items.map((c, i) => (
-                <TableRow key={c.id} className={s.row} onClick={() => nav(`/cases/${c.id}`)}>
-                  <TableCell>{(page - 1) * pageSize + i + 1}</TableCell>
-                  <TableCell>
-                    <Text weight="semibold">{c.childName}</Text>
-                    <div className={s.sub}>{c.referenceCode}</div>
-                  </TableCell>
-                  <TableCell>{formatAge(c.ageMonths)}</TableCell>
-                  <TableCell><DisciplineBadge discipline={c.discipline} /></TableCell>
-                  <TableCell>
-                    <Tooltip content={`${c.waitDays} days since referral; ${c.effectiveWaitDays - c.waitDays} priority days added`} relationship="description">
-                      <Text weight="semibold">{c.effectiveWaitDays}d</Text>
-                    </Tooltip>
-                    {c.effectiveWaitDays !== c.waitDays && <span className={s.sub}> ({c.waitDays}d actual)</span>}
-                  </TableCell>
-                  <TableCell><PriorityChips factors={c.priorityFactors} /></TableCell>
-                  <TableCell><SlaBadge sla={c.sla} target={c.targetStartBy} /></TableCell>
-                  <TableCell>
-                    {c.town}
-                    <div className={s.sub}>{SETTING_LABEL[c.preferredSetting]}</div>
-                  </TableCell>
-                  <TableCell>
-                    {status === 'scheduled' ? (
-                      c.assignedTherapistName
-                    ) : c.status === 'needs-review' ? (
-                      <Text size={200}>{c.reviewReason}</Text>
-                    ) : c.missingChecklist.length ? (
-                      <span style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                        {c.missingChecklist.map((m) => <Badge key={m} size="small" appearance="outline" color="warning">{CHECKLIST_LABEL[m]}</Badge>)}
-                      </span>
-                    ) : c.status === 'ready' ? (
-                      <Text className={s.sub}>Paperwork complete</Text>
-                    ) : (
-                      <StatusBadge status={c.status} />
-                    )}
-                  </TableCell>
-                </TableRow>
+      <div className="card overflow-hidden">
+        <div className="border-b border-cream-200 p-3">
+          <Tabs value={status} onValueChange={(v) => { setStatus(v as CaseStatus); reset(); }}>
+            <TabsList>
+              {TABS.map((t) => (
+                <TabsTrigger key={t} value={t} count={counts.data?.counts[t] ?? 0}>{STATUS_LABEL[t]}</TabsTrigger>
               ))}
-              {queue.data?.items.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={9}>
-                    <Text>Nothing here. {status === 'ready' ? 'The matching queue is empty.' : ''}</Text>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+            </TabsList>
+          </Tabs>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 border-b border-cream-200 bg-cream-50 px-5 py-3">
+          <div className="min-w-[260px] flex-1 sm:max-w-sm">
+            <Input icon={<SearchRegular />} aria-label="Search" placeholder="Search child, family or reference" value={search} onChange={(e) => { setSearch(e.target.value); reset(); }} />
+          </div>
+          <div className="w-48">
+            <Select
+              aria-label="Service"
+              value={discipline || 'all'}
+              onValueChange={(v) => { setDiscipline(v === 'all' ? '' : (v as Discipline)); reset(); }}
+              options={[{ value: 'all', label: 'All services' }, { value: 'speech', label: 'Speech therapy' }, { value: 'ot', label: 'Occupational therapy' }]}
+            />
+          </div>
+          {waiting && (
+            <div className="w-52">
+              <Select
+                aria-label="Target date"
+                value={sla || 'any'}
+                onValueChange={(v) => { setSla(v === 'any' ? '' : (v as 'at-risk' | 'breached')); reset(); }}
+                options={[{ value: 'any', label: 'Any target date' }, { value: 'at-risk', label: 'At risk', hint: '7 days or fewer left' }, { value: 'breached', label: 'Past target' }]}
+              />
+            </div>
+          )}
+          <span className="ml-auto text-sm text-ink-500">{queue.data ? `${queue.data.total} ${queue.data.total === 1 ? 'child' : 'children'}` : ''}</span>
+        </div>
+
+        {queue.isError && <div className="p-4"><ErrorBar error={queue.error} /></div>}
+        {queue.isLoading ? (
+          <SkeletonRows rows={8} />
+        ) : queue.data?.items.length === 0 ? (
+          <EmptyState icon={<PeopleQueueRegular />} title={status === 'ready' ? 'The matching queue is empty' : `No ${STATUS_LABEL[status].toLowerCase()} cases`}>
+            {q ? 'Try a different search.' : 'New online intakes appear here automatically.'}
+          </EmptyState>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-white text-xs font-bold uppercase tracking-wider text-ink-500">
+                <tr className="border-b border-cream-200">
+                  <th className="w-12 px-5 py-3">#</th>
+                  <th className="px-3 py-3">Child</th>
+                  <th className="hidden px-3 py-3 md:table-cell">Service</th>
+                  <th className="px-3 py-3">Waiting</th>
+                  <th className="hidden px-3 py-3 lg:table-cell">Priority</th>
+                  <th className="hidden px-3 py-3 sm:table-cell">Target</th>
+                  <th className="hidden px-3 py-3 xl:table-cell">Location</th>
+                  <th className="hidden px-3 py-3 lg:table-cell">{status === 'scheduled' ? 'Therapist' : 'Next step'}</th>
+                  <th className="w-8" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-cream-200">
+                {queue.data?.items.map((c, i) => (
+                  <tr key={c.id} className="row-link" onClick={() => nav(`/staff/cases/${c.id}`)}>
+                    <td className="px-5 py-3 font-bold text-ink-500">{(page - 1) * pageSize + i + 1}</td>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-3">
+                        <Avatar name={c.childName} size="sm" />
+                        <div className="min-w-0">
+                          <p className="truncate font-bold text-ink-900">{c.childName}</p>
+                          <p className="text-xs text-ink-500">{formatAge(c.ageMonths)} · {c.referenceCode}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="hidden px-3 py-3 md:table-cell"><DisciplineBadge discipline={c.discipline} /></td>
+                    <td className="px-3 py-3">
+                      <Tip content={`${c.waitDays} days since referral; ${c.effectiveWaitDays - c.waitDays} priority days added`}>
+                        <span tabIndex={0} className="cursor-help font-black tabular-nums text-ink-900">{c.effectiveWaitDays}d</span>
+                      </Tip>
+                      {c.effectiveWaitDays !== c.waitDays && <span className="ml-1 text-xs text-ink-500">({c.waitDays}d)</span>}
+                    </td>
+                    <td className="hidden px-3 py-3 lg:table-cell"><PriorityChips factors={c.priorityFactors} /></td>
+                    <td className="hidden px-3 py-3 sm:table-cell"><SlaBadge sla={c.sla} target={c.targetStartBy} /></td>
+                    <td className="hidden px-3 py-3 xl:table-cell">
+                      <p className="font-semibold text-ink-900">{c.town}</p>
+                      <p className="text-xs text-ink-500">{SETTING_LABEL[c.preferredSetting]}</p>
+                    </td>
+                    <td className="hidden px-3 py-3 lg:table-cell">
+                      {status === 'scheduled' ? (
+                        <span className="text-ink-700">{c.assignedTherapistName}</span>
+                      ) : c.status === 'needs-review' ? (
+                        <span className="line-clamp-2 text-xs text-red-800">{c.reviewReason}</span>
+                      ) : c.missingChecklist.length ? (
+                        <span className="flex flex-wrap gap-1">
+                          {c.missingChecklist.map((m) => (
+                            <span key={m} className="rounded-md bg-amber-50 px-1.5 py-0.5 text-[11px] font-bold text-amber-800 ring-1 ring-amber-200">{CHECKLIST_LABEL[m]}</span>
+                          ))}
+                        </span>
+                      ) : c.status === 'ready' ? (
+                        <span className="text-xs font-bold text-seed-700">Match &amp; book →</span>
+                      ) : (
+                        <StatusBadge status={c.status} />
+                      )}
+                    </td>
+                    <td className="pr-4 text-ink-500"><ChevronRightRegular /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
-      </Card>
-      <div className={s.pager}>
-        <Text className={s.sub}>{queue.data ? `${queue.data.total} cases` : ''}</Text>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <Button size="small" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button>
-          <Text>Page {page} of {pages}</Text>
-          <Button size="small" disabled={page >= pages} onClick={() => setPage(page + 1)}>Next</Button>
+
+        <div className="flex items-center justify-between border-t border-cream-200 bg-cream-50 px-5 py-3">
+          <span className="text-sm text-ink-500">Page {page} of {pages}</span>
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button>
+            <Button size="sm" variant="secondary" disabled={page >= pages} onClick={() => setPage(page + 1)}>Next</Button>
+          </div>
         </div>
       </div>
     </>

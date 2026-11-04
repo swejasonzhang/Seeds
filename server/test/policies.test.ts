@@ -45,11 +45,12 @@ describe('deriveStatus', () => {
   it('moves to ready only when funding-specific paperwork is complete', () => {
     const base = { status: 'pending-documents' as const, fundingSource: 'insurance' as const, reviewReason: null };
     expect(deriveStatus({ ...base, completedChecklist: ['consent'] })).toBe('pending-documents');
-    expect(deriveStatus({ ...base, completedChecklist: ['consent', 'insurance-verified', 'physician-referral'] })).toBe('ready');
+    expect(deriveStatus({ ...base, completedChecklist: ['consent', 'insurance-verified', 'physician-referral'] })).toBe('pending-documents');
+    expect(deriveStatus({ ...base, completedChecklist: ['consent', 'hipaa-ack', 'office-policy', 'insurance-verified', 'physician-referral'] })).toBe('ready');
   });
   it('never overrides a manual status and flags review reasons', () => {
     expect(deriveStatus({ status: 'on-hold', fundingSource: 'private', completedChecklist: ['consent'] })).toBe('on-hold');
-    expect(deriveStatus({ status: 'ready', fundingSource: 'private', completedChecklist: ['consent'], reviewReason: 'Address not found' })).toBe('needs-review');
+    expect(deriveStatus({ status: 'ready', fundingSource: 'private', completedChecklist: ['consent', 'hipaa-ack', 'office-policy'], reviewReason: 'Address not found' })).toBe('needs-review');
   });
 });
 

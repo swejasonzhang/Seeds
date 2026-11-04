@@ -1,4 +1,16 @@
-import { Badge, MessageBar, MessageBarBody, Spinner, Tooltip, makeStyles, tokens } from '@fluentui/react-components';
+import type { ReactNode } from 'react';
+import { Alert, Spinner, Tip } from './kit';
+import {
+  CalendarCheckmarkRegular,
+  CheckmarkCircleRegular,
+  ClockRegular,
+  DocumentRegular,
+  ErrorCircleRegular,
+  PauseCircleRegular,
+  SearchInfoRegular,
+  WarningRegular,
+  ArchiveRegular,
+} from '@fluentui/react-icons';
 import {
   DAY_SHORT,
   DISCIPLINE_LABEL,
@@ -13,53 +25,57 @@ import {
 } from '@seeds/shared';
 import { errorMessage } from '../api';
 
-type BadgeColor = 'brand' | 'danger' | 'important' | 'informative' | 'severe' | 'subtle' | 'success' | 'warning';
+const pill = 'inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-bold';
 
-const STATUS_COLOR: Record<CaseStatus, BadgeColor> = {
-  'needs-review': 'severe',
-  'pending-documents': 'warning',
-  ready: 'brand',
-  scheduled: 'success',
-  'on-hold': 'subtle',
-  closed: 'informative',
+const STATUS_STYLE: Record<CaseStatus, { cls: string; icon: ReactNode }> = {
+  'needs-review': { cls: 'bg-red-50 text-red-800 ring-1 ring-red-200', icon: <SearchInfoRegular /> },
+  'pending-documents': { cls: 'bg-amber-50 text-amber-800 ring-1 ring-amber-200', icon: <DocumentRegular /> },
+  ready: { cls: 'bg-seed-50 text-seed-800 ring-1 ring-seed-200', icon: <ClockRegular /> },
+  scheduled: { cls: 'bg-seed-500 text-white', icon: <CalendarCheckmarkRegular /> },
+  'on-hold': { cls: 'bg-cream-200 text-ink-700', icon: <PauseCircleRegular /> },
+  closed: { cls: 'bg-cream-200 text-ink-500', icon: <ArchiveRegular /> },
 };
 
 export const StatusBadge = ({ status }: { status: CaseStatus }) => (
-  <Badge appearance="tint" color={STATUS_COLOR[status]}>
+  <span className={`${pill} ${STATUS_STYLE[status].cls}`}>
+    {STATUS_STYLE[status].icon}
     {STATUS_LABEL[status]}
-  </Badge>
-);
-
-export const DisciplineBadge = ({ discipline }: { discipline: Discipline }) => (
-  <Badge appearance="outline" color={discipline === 'speech' ? 'brand' : 'important'}>
-    {discipline === 'speech' ? 'Speech' : 'OT'}
-  </Badge>
-);
-export const disciplineName = (d: Discipline) => DISCIPLINE_LABEL[d];
-
-export const PriorityChips = ({ factors }: { factors: PriorityFactor[] }) => (
-  <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
-    {factors.map((f) => (
-      <Badge key={f} size="small" appearance="tint" color={f === 'urgent' ? 'danger' : 'informative'}>
-        {PRIORITY_LABEL[f]}
-      </Badge>
-    ))}
   </span>
 );
 
-const SLA: Record<SlaState, { label: string; color: BadgeColor }> = {
-  'on-track': { label: 'On track', color: 'success' },
-  'at-risk': { label: 'At risk', color: 'warning' },
-  breached: { label: 'Past target', color: 'danger' },
-  met: { label: 'Met', color: 'informative' },
+export const DisciplineBadge = ({ discipline }: { discipline: Discipline }) => (
+  <span className={`${pill} ${discipline === 'speech' ? 'bg-seed-950 text-cream-50' : 'bg-olive-200 text-seed-950'}`}>
+    {discipline === 'speech' ? 'Speech' : 'OT'}
+  </span>
+);
+export const disciplineName = (d: Discipline) => DISCIPLINE_LABEL[d];
+
+export const PriorityChips = ({ factors }: { factors: PriorityFactor[] }) =>
+  factors.length === 0 ? null : (
+    <span className="inline-flex flex-wrap gap-1">
+      {factors.map((f) => (
+        <span key={f} className={`${pill} font-semibold ${f === 'urgent' ? 'bg-red-50 text-red-800 ring-1 ring-red-200' : 'bg-clay-50 text-clay-700 ring-1 ring-clay-200'}`}>
+          {f === 'urgent' && <WarningRegular />}
+          {PRIORITY_LABEL[f]}
+        </span>
+      ))}
+    </span>
+  );
+
+const SLA: Record<SlaState, { label: string; cls: string; icon: ReactNode }> = {
+  'on-track': { label: 'On track', cls: 'text-seed-700', icon: <CheckmarkCircleRegular /> },
+  'at-risk': { label: 'At risk', cls: 'text-amber-700', icon: <WarningRegular /> },
+  breached: { label: 'Past target', cls: 'text-red-700', icon: <ErrorCircleRegular /> },
+  met: { label: 'Met', cls: 'text-seed-700', icon: <CheckmarkCircleRegular /> },
 };
 
 export const SlaBadge = ({ sla, target }: { sla: SlaState; target: string }) => (
-  <Tooltip content={`Target start by ${formatDate(target)}`} relationship="description">
-    <Badge appearance="tint" color={SLA[sla].color}>
+  <Tip content={`Target start by ${formatDate(target)}`}>
+    <span tabIndex={0} className={`inline-flex items-center gap-1 whitespace-nowrap text-xs font-bold ${SLA[sla].cls}`}>
+      {SLA[sla].icon}
       {SLA[sla].label}
-    </Badge>
-  </Tooltip>
+    </span>
+  </Tip>
 );
 
 export const formatAge = (months: number) => (months < 24 ? `${months} mo` : `${Math.floor(months / 12)}y ${months % 12}m`);
@@ -83,21 +99,15 @@ export function windowsSummary(windows: WeeklyWindow[]) {
   return [...byDay.entries()].map(([d, t]) => `${DAY_SHORT[d]} ${t.join(', ')}`).join(' · ');
 }
 
-const useStyles = makeStyles({
-  center: { display: 'flex', justifyContent: 'center', padding: tokens.spacingVerticalXXL },
-});
+export const initials = (name: string) =>
+  name
+    .split(/[\s,]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0])
+    .join('')
+    .toUpperCase();
 
-export function Loading({ label = 'Loading…' }: { label?: string }) {
-  const s = useStyles();
-  return (
-    <div className={s.center}>
-      <Spinner label={label} />
-    </div>
-  );
-}
+export const Loading = ({ label = 'Loading…' }: { label?: string }) => <Spinner label={label} />;
 
-export const ErrorBar = ({ error }: { error: unknown }) => (
-  <MessageBar intent="error">
-    <MessageBarBody>{errorMessage(error)}</MessageBarBody>
-  </MessageBar>
-);
+export const ErrorBar = ({ error }: { error: unknown }) => <Alert tone="error" title="Something went wrong">{errorMessage(error)}</Alert>;

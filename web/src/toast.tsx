@@ -1,15 +1,9 @@
-import { Toast, ToastBody, ToastTitle, useToastController } from '@fluentui/react-components';
+import { toast } from './components/kit';
 
-export const TOASTER_ID = 'app-toaster';
-
+/** Toast helper used across pages (Sonner under the hood, branded in kit/feedback). */
 export function useNotify() {
-  const { dispatchToast } = useToastController(TOASTER_ID);
-  return (title: string, intent: 'success' | 'error' | 'info' | 'warning' = 'success', body?: string) =>
-    dispatchToast(
-      <Toast>
-        <ToastTitle>{title}</ToastTitle>
-        {body && <ToastBody>{body}</ToastBody>}
-      </Toast>,
-      { intent, timeout: intent === 'error' ? 8000 : 4000 },
-    );
+  return (title: string, intent: 'success' | 'error' | 'info' | 'warning' = 'success', body?: string) => {
+    const fn = intent === 'success' ? toast.success : intent === 'error' ? toast.error : intent === 'warning' ? toast.warning : toast.info;
+    fn(title, { description: body, duration: intent === 'error' ? 8000 : 4000 });
+  };
 }

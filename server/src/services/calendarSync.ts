@@ -61,7 +61,7 @@ export function createCalendarSync(config: AppConfig, log: Logger, fetchImpl: ty
     // No PHI in calendar items: initials + case reference only. Full details live behind sign-in in SEEDS.
     const event = {
       subject: `${DISCIPLINE_LABEL[appt.discipline as Discipline]} · ${appt.childLabel} (${appt.referenceCode})`,
-      body: { contentType: 'text', content: 'Standing weekly session booked in SEEDS Intake. Open the case in SEEDS for address and notes.' },
+      body: { contentType: 'text', content: 'Standing weekly session booked through the SEEDS staff portal. Open the case in the portal for address and notes.' },
       start: { dateTime: localDateTime(appt.startsOn, appt.start), timeZone: windowsTimeZone },
       end: { dateTime: localDateTime(appt.startsOn, appt.end), timeZone: windowsTimeZone },
       location: { displayName: appt.location?.label ?? (appt.setting === 'telehealth' ? 'Telehealth' : '') },

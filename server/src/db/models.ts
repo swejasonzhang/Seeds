@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { CALENDAR_SYNC_STATES, CASE_STATUSES, CHECKLIST_ITEMS, DISCIPLINES, FUNDING_SOURCES, PRIORITY_FACTORS, REFERRAL_SOURCES, SETTINGS } from '@seeds/shared';
+import { CALENDAR_SYNC_STATES, CASE_STATUSES, CHECKLIST_ITEMS, DISCIPLINES, DOCUMENT_KINDS, FUNDING_SOURCES, PRIORITY_FACTORS, REFERRAL_SOURCES, SETTINGS } from '@seeds/shared';
 import type { GeoPoint } from '../core/travel.ts';
 
 const { Schema, model } = mongoose;
@@ -92,6 +92,8 @@ const caseSchema = new Schema(
     sessionMinutes: { type: Number, default: 45 },
 
     completedChecklist: [{ type: String, enum: CHECKLIST_ITEMS }],
+    /** Who completed each checklist step and when (family, staff or automation). */
+    checklistLog: [new Schema({ item: String, at: Date, by: String, note: String }, { _id: false })],
     consent: { signedBy: String, signedAt: Date },
 
     assignedTherapistId: { type: Schema.Types.ObjectId, ref: 'Therapist' },
@@ -173,6 +175,28 @@ appointmentSchema.index({ 'calendar.state': 1, 'calendar.claimedAt': 1 }); // ca
 
 export const Appointment = model('Appointment', appointmentSchema, 'appointments');
 
+// ---------- documents (insurance cards, prescriptions, IEPs, reports) ----------
+// File bytes live in GridFS (bucket "documents") so uploads work on any MongoDB: local, Atlas or Cosmos DB.
+// For real PHI at scale, swap the store for Azure Blob Storage with private containers and SAS links.
+
+const documentSchema = new Schema(
+  {
+    caseId: { type: Schema.Types.ObjectId, ref: 'IntakeCase', required: true },
+    householdKey: { type: String, required: true },
+    kind: { type: String, enum: DOCUMENT_KINDS, required: true },
+    filename: { type: String, required: true },
+    contentType: { type: String, required: true },
+    size: { type: Number, required: true },
+    fileId: { type: Schema.Types.ObjectId, required: true },
+    uploadedBy: { type: String, required: true },
+  },
+  { timestamps: true },
+);
+documentSchema.index({ caseId: 1, createdAt: -1 });
+
+export const CaseDocument = model('CaseDocument', documentSchema, 'documents');
+export const documentBucket = () => new mongoose.mongo.GridFSBucket(mongoose.connection.db!, { bucketName: 'documents' });
+
 // ---------- meta (locks, one-time jobs) ----------
 
 export const Meta = model('Meta', new Schema({ _id: String, at: Date }, { versionKey: false }), 'meta');
@@ -181,12 +205,13 @@ export type ChildDoc = mongoose.InferSchemaType<typeof childSchema> & { _id: mon
 export type CaseDoc = mongoose.InferSchemaType<typeof caseSchema> & { _id: mongoose.Types.ObjectId };
 export type TherapistDoc = mongoose.InferSchemaType<typeof therapistSchema> & { _id: mongoose.Types.ObjectId };
 export type AppointmentDoc = mongoose.InferSchemaType<typeof appointmentSchema> & { _id: mongoose.Types.ObjectId };
+export type DocumentDoc = mongoose.InferSchemaType<typeof documentSchema> & { _id: mongoose.Types.ObjectId; createdAt: Date };
 
 export async function connectDb(uri: string) {
   mongoose.set('strictQuery', true);
   await mongoose.connect(uri, { maxPoolSize: 20, serverSelectionTimeoutMS: 10_000 });
   // createIndexes (not syncIndexes): safe when several instances boot at once, never drops indexes.
-  await Promise.all([Child.createIndexes(), IntakeCase.createIndexes(), Therapist.createIndexes(), Appointment.createIndexes()]);
+  await Promise.all([Child.createIndexes(), IntakeCase.createIndexes(), Therapist.createIndexes(), Appointment.createIndexes(), CaseDocument.createIndexes()]);
 }
 
 export const isDbConnected = () => mongoose.connection.readyState === 1;

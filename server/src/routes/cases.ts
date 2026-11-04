@@ -3,7 +3,6 @@ import mongoose from 'mongoose';
 import { z } from 'zod';
 import {
   CHECKLIST_ITEMS,
-  CHECKLIST_LABEL,
   DISCIPLINES,
   FUNDING_SOURCES,
   SETTINGS,
@@ -16,7 +15,9 @@ import {
   type Paged,
   type QueueItem,
 } from '@seeds/shared';
-import { Appointment, Child, IntakeCase, toPoint, type AppointmentDoc, type CaseDoc, type ChildDoc } from '../db/models.ts';
+import { Appointment, CaseDocument, Child, IntakeCase, toPoint, type AppointmentDoc, type CaseDoc, type ChildDoc, type DocumentDoc } from '../db/models.ts';
+import { buildJourney, refreshCaseStatus, setStep } from '../services/journey.ts';
+import { toDocumentDto } from './portal.ts';
 import { assessPriority, deriveStatus } from '../core/policies.ts';
 import { addDays } from '../core/dates.ts';
 import { today, type Services } from '../context.ts';
@@ -48,17 +49,7 @@ export function caseRoutes(s: Services, requireCoordinator: express.RequestHandl
     return c;
   }
 
-  async function refreshStatus(id: mongoose.Types.ObjectId, who: string) {
-    const c = await IntakeCase.findById(id).lean<CaseDoc>();
-    if (!c) return;
-    const next = deriveStatus(c);
-    if (next !== c.status) {
-      await IntakeCase.updateOne(
-        { _id: id, status: c.status },
-        { $set: { status: next }, $push: { events: event(who, 'status', `${STATUS_LABEL[c.status]} → ${STATUS_LABEL[next]}`, s.now()) } },
-      );
-    }
-  }
+  const refreshStatus = (id: mongoose.Types.ObjectId) => refreshCaseStatus(id, s.now());
 
   // ----- queue -----
 
@@ -100,12 +91,13 @@ export function caseRoutes(s: Services, requireCoordinator: express.RequestHandl
 
   r.get('/cases/:id', async (req, res) => {
     const c = await loadCase(req.params.id);
-    const [child, appts, siblings] = await Promise.all([
+    const [child, appts, siblings, docs] = await Promise.all([
       Child.findById(c.childId).lean<ChildDoc>(),
       Appointment.find({ caseId: c._id, status: 'active' }).sort({ day: 1, start: 1 }).lean<AppointmentDoc[]>(),
       c.householdKey
         ? IntakeCase.find({ householdKey: c.householdKey, _id: { $ne: c._id } }, { referenceCode: 1, childName: 1, discipline: 1, status: 1, assignedTherapistName: 1 }).lean<CaseDoc[]>()
         : Promise.resolve([] as CaseDoc[]),
+      CaseDocument.find({ caseId: c._id }).sort({ createdAt: -1 }).lean<DocumentDoc[]>(),
     ]);
     if (!child) throw notFound('Client');
     const t = today(s);
@@ -142,6 +134,8 @@ export function caseRoutes(s: Services, requireCoordinator: express.RequestHandl
       completedChecklist: c.completedChecklist,
       consent: c.consent?.signedBy ? { signedBy: c.consent.signedBy, signedAt: (c.consent.signedAt ?? c.receivedAt).toISOString() } : undefined,
       appointments: appts.map(toAppointmentDto),
+      journey: buildJourney(c),
+      documents: docs.map(toDocumentDto),
       events: [...c.events].reverse().map(toEventDto),
       siblings: siblings.map((x) => ({
         id: x._id.toString(),
@@ -158,14 +152,9 @@ export function caseRoutes(s: Services, requireCoordinator: express.RequestHandl
   // ----- paperwork checklist: completing it auto-advances the case into the matching queue -----
 
   r.patch('/cases/:id/checklist', requireCoordinator, async (req, res) => {
-    const body = z.object({ item: z.enum(CHECKLIST_ITEMS), completed: z.boolean() }).parse(req.body);
+    const body = z.object({ item: z.enum(CHECKLIST_ITEMS), completed: z.boolean(), note: z.string().trim().max(300).optional() }).parse(req.body);
     const c = await loadCase(req.params.id);
-    const update = body.completed ? { $addToSet: { completedChecklist: body.item } } : { $pull: { completedChecklist: body.item } };
-    await IntakeCase.updateOne(
-      { _id: c._id },
-      { ...update, $push: { events: event(actor(req), 'checklist', `${CHECKLIST_LABEL[body.item]} ${body.completed ? 'completed' : 'un-checked'}`, s.now()) } },
-    );
-    await refreshStatus(c._id, 'System');
+    await setStep(c._id, body.item, body.completed, actor(req), s.now(), body.note);
     res.status(204).end();
   });
 
@@ -232,7 +221,7 @@ export function caseRoutes(s: Services, requireCoordinator: express.RequestHandl
       { _id: c._id },
       { $set: set, $push: { events: event(actor(req), 'review', `Review resolved${body.address ? ' (address corrected)' : ''}${body.note ? `: ${body.note}` : ''}`, s.now()) } },
     );
-    await refreshStatus(c._id, 'System');
+    await refreshStatus(c._id);
     res.status(204).end();
   });
 

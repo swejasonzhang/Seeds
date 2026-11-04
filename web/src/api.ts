@@ -1,4 +1,5 @@
 import { QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { getPersona, onPersonaChange } from './session';
 import type {
   ApiError,
   AutoMatchResponse,
@@ -8,8 +9,13 @@ import type {
   ChecklistItem,
   ConfirmBookingsRequest,
   ConfirmBookingsResponse,
+  DashboardDto,
   DayRoute,
+  DemoPersonasDto,
   Discipline,
+  DocumentDto,
+  DocumentKind,
+  FamilyPortalDto,
   IntakeResult,
   IntakeSubmission,
   MatchResponse,
@@ -19,7 +25,9 @@ import type {
   QueueItem,
   StatusCounts,
   TherapistDetail,
+  TherapistPortalDto,
   TherapistSummary,
+  WeeklyWindow,
   UpdatePlanRequest,
 } from '@seeds/shared';
 
@@ -39,11 +47,13 @@ export const setTokenProvider = (p: typeof tokenProvider) => (tokenProvider = p)
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = tokenProvider ? await tokenProvider() : null;
+  const persona = getPersona();
   const res = await fetch(`/api${path}`, {
     ...init,
     headers: {
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(persona ? { 'X-Demo-Persona': persona.key } : {}),
       ...init.headers,
     },
   });
@@ -57,10 +67,18 @@ const post = <T>(path: string, body?: unknown) => api<T>(path, { method: 'POST',
 const patch = <T>(path: string, body: unknown) => api<T>(path, { method: 'PATCH', body: JSON.stringify(body) });
 
 export const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 15_000, retry: 1, refetchOnWindowFocus: true } },
+  defaultOptions: { queries: { staleTime: 15_000, retry: (n, e) => n < 1 && !(e instanceof ApiRequestError && e.status < 500), refetchOnWindowFocus: true } },
 });
+onPersonaChange(() => queryClient.clear());
 
 // ---------- queries ----------
+
+export const usePersonas = () => useQuery({ queryKey: ['personas'], queryFn: () => api<DemoPersonasDto>('/demo/personas'), staleTime: 60_000 });
+
+export const useFamilyPortal = () => useQuery({ queryKey: ['family'], queryFn: () => api<FamilyPortalDto>('/portal/family') });
+export const useTherapistPortal = () => useQuery({ queryKey: ['therapist-portal'], queryFn: () => api<TherapistPortalDto>('/portal/therapist') });
+export const useMyRoute = (date: string) =>
+  useQuery({ queryKey: ['my-route', date], queryFn: () => api<DayRoute>(`/portal/therapist/route?date=${date}`) });
 
 export const usePublicConfig = () => useQuery({ queryKey: ['config'], queryFn: () => api<PublicConfigDto>('/config'), staleTime: Infinity });
 export const useMe = () => useQuery({ queryKey: ['me'], queryFn: () => api<MeDto>('/me'), staleTime: Infinity });
@@ -90,6 +108,8 @@ export const useCase = (id: string) => useQuery({ queryKey: ['case', id], queryF
 export const useMatches = (id: string, enabled: boolean) =>
   useQuery({ queryKey: ['matches', id], queryFn: () => api<MatchResponse>(`/cases/${id}/matches`), enabled, staleTime: 0 });
 
+export const useDashboard = () => useQuery({ queryKey: ['dashboard'], queryFn: () => api<DashboardDto>('/dashboard'), staleTime: 30_000 });
+
 export const useTherapists = () => useQuery({ queryKey: ['therapists'], queryFn: () => api<TherapistSummary[]>('/therapists') });
 export const useTherapist = (id: string) => useQuery({ queryKey: ['therapist', id], queryFn: () => api<TherapistDetail>(`/therapists/${id}`) });
 export const useRoute = (id: string, date: string) =>
@@ -101,7 +121,7 @@ export const useRoute = (id: string, date: string) =>
 function useInvalidateAll() {
   const qc = useQueryClient();
   return () =>
-    Promise.all(['queue', 'queue-counts', 'case', 'matches', 'therapists', 'therapist', 'route'].map((k) => qc.invalidateQueries({ queryKey: [k] })));
+    Promise.all(['queue', 'queue-counts', 'case', 'matches', 'therapists', 'therapist', 'route', 'dashboard', 'family', 'therapist-portal', 'my-route'].map((k) => qc.invalidateQueries({ queryKey: [k] })));
 }
 
 export const useSubmitIntake = () => useMutation({ mutationFn: (body: IntakeSubmission) => post<IntakeResult>('/intake', body) });
@@ -110,13 +130,53 @@ export function useCaseActions(id: string) {
   const invalidate = useInvalidateAll();
   const opts = { onSuccess: invalidate };
   return {
-    checklist: useMutation({ mutationFn: (b: { item: ChecklistItem; completed: boolean }) => patch<void>(`/cases/${id}/checklist`, b), ...opts }),
+    checklist: useMutation({ mutationFn: (b: { item: ChecklistItem; completed: boolean; note?: string }) => patch<void>(`/cases/${id}/checklist`, b), ...opts }),
     plan: useMutation({ mutationFn: (b: UpdatePlanRequest) => patch<void>(`/cases/${id}/plan`, b), ...opts }),
     status: useMutation({ mutationFn: (b: { status: 'on-hold' | 'closed' | 'ready'; note?: string }) => post<void>(`/cases/${id}/status`, b), ...opts }),
     resolveReview: useMutation({ mutationFn: (b: { note?: string }) => post<void>(`/cases/${id}/resolve-review`, b), ...opts }),
     book: useMutation({ mutationFn: (b: BookRequest) => post<unknown>(`/cases/${id}/book`, b), ...opts }),
     unschedule: useMutation({ mutationFn: (reason: string) => post<void>(`/cases/${id}/unschedule`, { reason }), ...opts }),
   };
+}
+
+export function useFamilyActions() {
+  const invalidate = useInvalidateAll();
+  return {
+    step: useMutation({
+      mutationFn: (b: { caseId: string; step: string; signatureName?: string; note?: string }) =>
+        post<void>(`/portal/family/cases/${b.caseId}/steps/${b.step}`, { signatureName: b.signatureName, note: b.note }),
+      onSuccess: invalidate,
+    }),
+    upload: useMutation({
+      mutationFn: async (b: { caseId: string; kind: DocumentKind; file: File }) => {
+        const dataBase64 = await fileToBase64(b.file);
+        return post<DocumentDto>(`/portal/family/cases/${b.caseId}/documents`, { kind: b.kind, filename: b.file.name, contentType: b.file.type || 'application/pdf', dataBase64 });
+      },
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+export function useUpdateAvailability() {
+  const invalidate = useInvalidateAll();
+  return useMutation({ mutationFn: (availability: WeeklyWindow[]) => api<void>('/portal/therapist/availability', { method: 'PUT', body: JSON.stringify({ availability }) }), onSuccess: invalidate });
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Documents need the persona header too, so fetch as a blob and open it. */
+export async function openDocument(id: string) {
+  const persona = getPersona();
+  const res = await fetch(`/api/documents/${id}`, { headers: persona ? { 'X-Demo-Persona': persona.key } : {} });
+  if (!res.ok) throw new ApiRequestError(res.status);
+  window.open(URL.createObjectURL(await res.blob()), '_blank', 'noopener');
 }
 
 export const useAutoMatch = () =>

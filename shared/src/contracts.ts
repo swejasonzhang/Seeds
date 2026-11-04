@@ -1,5 +1,8 @@
 import type {
   CalendarSyncState,
+  DocumentKind,
+  JourneyPhaseId,
+  StepOwner,
   CaseStatus,
   ChecklistItem,
   Discipline,
@@ -18,6 +21,53 @@ export interface IntakeResult {
   cases: { referenceCode: string; discipline: Discipline; status: CaseStatus }[];
   /** Services that were already open for this child, so no new case was created. */
   alreadyOpen: Discipline[];
+  /** Demo only: key to open this family's portal right away (production parents sign in with Entra External ID). */
+  familyKey?: string;
+}
+
+// ---------- Journey / checklist ----------
+
+export type StepStatus = 'done' | 'todo' | 'waiting';
+
+export interface JourneyStepDto {
+  id: ChecklistItem;
+  title: string;
+  description: string;
+  owner: StepOwner;
+  status: StepStatus;
+  required: boolean;
+  optional: boolean;
+  familyAction?: 'sign' | 'upload' | 'confirm';
+  documentKind?: DocumentKind;
+  timeline?: string;
+  completedAt?: string;
+  completedBy?: string;
+}
+
+export interface JourneyPhaseDto {
+  id: JourneyPhaseId;
+  title: string;
+  steps: JourneyStepDto[];
+}
+
+export interface JourneySummary {
+  phases: JourneyPhaseDto[];
+  done: number;
+  total: number;
+  /** Required steps still open, in order. */
+  blocking: JourneyStepDto[];
+  /** First open step the family can act on. */
+  nextForFamily?: JourneyStepDto;
+}
+
+export interface DocumentDto {
+  id: string;
+  kind: DocumentKind;
+  filename: string;
+  contentType: string;
+  size: number;
+  uploadedAt: string;
+  uploadedBy: string;
 }
 
 // ---------- Queue & cases ----------
@@ -106,6 +156,8 @@ export interface CaseDetail extends QueueItem {
   consent?: { signedBy: string; signedAt: string };
   appointments: AppointmentDto[];
   events: CaseEventDto[];
+  journey: JourneySummary;
+  documents: DocumentDto[];
   siblings: { id: string; referenceCode: string; childName: string; discipline: Discipline; status: CaseStatus; therapistName?: string }[];
 }
 
@@ -291,6 +343,68 @@ export interface MeDto {
   email: string;
   roles: Role[];
   authMode: 'demo' | 'entra';
+  therapistId?: string;
+  familyKey?: string;
+}
+
+// ---------- Portals ----------
+
+export interface FamilyCaseDto {
+  id: string;
+  referenceCode: string;
+  discipline: Discipline;
+  status: CaseStatus;
+  receivedAt: string;
+  fundingSource: FundingSource;
+  preferredSetting: SessionSetting;
+  targetStartBy: string;
+  journey: JourneySummary;
+  therapist?: { name: string; languages: string[] };
+  sessions: { day: number; start: number; end: number; startsOn: string; setting: SessionSetting; locationLabel: string }[];
+  documents: DocumentDto[];
+}
+
+export interface FamilyPortalDto {
+  guardianName: string;
+  familyKey: string;
+  children: { id: string; firstName: string; lastName: string; ageMonths: number; cases: FamilyCaseDto[] }[];
+}
+
+export interface CaseloadItemDto {
+  caseId: string;
+  referenceCode: string;
+  childName: string;
+  ageMonths: number;
+  discipline: Discipline;
+  preferredLanguage: string;
+  setting: SessionSetting;
+  locationLabel: string;
+  homeAddress: string;
+  guardian: { name: string; relationship: string; phone: string; email?: string };
+  concerns: string;
+  urgentConcern: boolean;
+  fundingSource: FundingSource;
+  sessions: AppointmentDto[];
+  journey: { done: number; total: number };
+  documents: DocumentDto[];
+}
+
+export interface TherapistPortalDto {
+  therapist: TherapistDetail;
+  caseload: CaseloadItemDto[];
+}
+
+export interface PersonaDto {
+  kind: 'admin' | 'therapist' | 'parent';
+  key: string;
+  name: string;
+  subtitle: string;
+}
+
+export interface DemoPersonasDto {
+  admin: PersonaDto;
+  therapists: PersonaDto[];
+  families: PersonaDto[];
 }
 
 /** Public, unauthenticated runtime config for the SPA, so one build works in every environment. */

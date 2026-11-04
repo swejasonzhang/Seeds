@@ -1,4 +1,4 @@
-# SEEDS Intake
+# SEEDS of the Willistons: website, intake & scheduling (unofficial concept)
 
 Client intake, waitlist queue and **travel-aware therapist matching** for **SEEDS of the Willistons**, a pediatric
 speech and occupational therapy practice in Williston Park, NY (Nassau County).
@@ -15,6 +15,18 @@ The two bottlenecks it targets:
 
 > **Demo data only.** The deployed demo runs with `AUTH_MODE=demo` and seeded fictional children, families and
 > therapists. Turn on Microsoft Entra ID sign-in before any real family information is entered.
+
+## Portals & workflow
+
+| Who | Where | What they get |
+| --- | --- | --- |
+| **Families** | `/intake` → `/family` | Six-step intake, then a checklist per child: practice paperwork (consent, HIPAA, office policy), insurance or the **NYS CPSE/CSE special-education steps** (written referral → consent → evaluation within 60 calendar days → CSE/CPSE meeting & IEP → share the IEP), uploads, therapist and session times |
+| **Therapists** | `/therapist` | Week calendar, daily route sheet with drive legs, caseload with everything families shared, self-service availability editor |
+| **Front desk / admin** | `/staff` | Priority queue with KPIs, every family's intake + documents + checklist (with who did what and when), all therapist availability, matching, auto-match, booking |
+
+Completing the required checklist moves a case to **Ready** automatically; booking puts the child on the therapist's
+week and shows the therapist and time in the family portal. Demo sign-in at `/sign-in` (fictional accounts); in
+production families would use Microsoft Entra External ID and staff Microsoft Entra ID.
 
 ## What's in the MVP
 

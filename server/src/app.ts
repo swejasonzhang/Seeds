@@ -6,7 +6,7 @@ import compression from 'compression';
 import mongoose from 'mongoose';
 import { rateLimit } from 'express-rate-limit';
 import { pinoHttp } from 'pino-http';
-import { intakeSchema, type PublicConfigDto } from '@seeds/shared';
+import { intakeSchema, type MeDto, type PublicConfigDto } from '@seeds/shared';
 import type { Services } from './context.ts';
 import { createAuth } from './auth.ts';
 import { errorHandler, notFound } from './errors.ts';
@@ -14,6 +14,7 @@ import { isDbConnected } from './db/models.ts';
 import { submitIntake } from './services/intakeService.ts';
 import { caseRoutes } from './routes/cases.ts';
 import { staffRoutes } from './routes/staff.ts';
+import { demoRoutes, documentRoutes, familyRoutes, therapistPortalRoutes } from './routes/portal.ts';
 
 function resolveStaticDir(configured?: string): string | null {
   const candidates = configured ? [configured] : [path.resolve('public'), path.resolve('../web/dist'), path.resolve('web/dist')];
@@ -50,8 +51,15 @@ export function createApp(s: Services) {
       },
     }),
   );
+  // Unofficial concept for a real practice: keep every page and API response out of search engines.
+  app.use((_req, res, next) => {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+    next();
+  });
   app.use(compression());
-  app.use(express.json({ limit: '100kb' }));
+  // Small JSON bodies everywhere except document uploads, which parse their own (larger) body.
+  const json = express.json({ limit: '100kb' });
+  app.use((req, res, next) => (req.method === 'POST' && req.path.endsWith('/documents') ? next() : json(req, res, next)));
 
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
   app.get('/readyz', (_req, res) => {
@@ -91,11 +99,26 @@ export function createApp(s: Services) {
     res.status(201).json(await submitIntake(input, s));
   });
 
-  // ----- staff (signed in) -----
+  if (s.config.auth.mode === 'demo') api.use(demoRoutes());
+
+  // ----- signed in: every role -----
   const { authenticate, requireRole } = createAuth(s.config);
-  api.use(authenticate, requireRole('coordinator', 'therapist', 'admin'));
+  api.use(authenticate);
+  api.get('/me', (req, res) => {
+    const u = req.user!;
+    const body: MeDto = { name: u.name, email: u.email, roles: u.roles, authMode: s.config.auth.mode, therapistId: u.therapistId, familyKey: u.familyKey };
+    res.json(body);
+  });
+  api.use(documentRoutes());
+
+  // ----- role portals -----
+  api.use('/portal/family', requireRole('parent'), familyRoutes(s));
+  api.use('/portal/therapist', requireRole('therapist'), therapistPortalRoutes(s));
+
+  // ----- staff console (front desk / admin) -----
   const requireCoordinator = requireRole('coordinator', 'admin');
   const requireAdmin = requireRole('admin');
+  api.use(requireCoordinator);
   const cases = caseRoutes(s, requireCoordinator);
   api.use(cases.router);
   api.use(staffRoutes(s, { requireCoordinator, requireAdmin }, cases.bookBody));

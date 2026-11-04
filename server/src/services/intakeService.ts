@@ -75,7 +75,7 @@ export async function submitIntake(input: ValidIntake, s: Services): Promise<Int
   const alreadyOpen = input.services.filter((d) => open.some((o) => o.discipline === d));
   const toCreate = input.services.filter((d) => !alreadyOpen.includes(d));
   const submissionCode = await newSubmissionCode();
-  if (toCreate.length === 0) return { submissionCode, cases: [], alreadyOpen };
+  if (toCreate.length === 0) return { submissionCode, cases: [], alreadyOpen, familyKey: s.config.auth.mode === 'demo' ? householdKey : undefined };
 
   // 3. Where will sessions happen?
   let sessionLocation: CaseDoc['sessionLocation'];
@@ -111,7 +111,12 @@ export async function submitIntake(input: ValidIntake, s: Services): Promise<Int
       },
       s.config.priority,
     );
-    const completedChecklist: ChecklistItem[] = ['consent']; // e-signed on the form
+    // Signed on the form; anything not acknowledged here becomes a to-do in the family portal.
+    const completedChecklist: ChecklistItem[] = ['consent'];
+    if (input.consent.hipaaAcknowledged) completedChecklist.push('hipaa-ack');
+    if (input.consent.policyAgreed) completedChecklist.push('office-policy');
+    const signer = `${guardian.firstName} ${guardian.lastName} (parent)`;
+    const checklistLog = completedChecklist.map((item) => ({ item, at: now, by: signer, note: `e-signed by "${input.consent.signatureName}"` }));
     const status = deriveStatus({ status: 'pending-documents', reviewReason, fundingSource: input.fundingSource, completedChecklist });
     const missing = missingChecklist(input.fundingSource, completedChecklist);
     const referenceCode = `${submissionCode}-${DISCIPLINE_SHORT[discipline]}`;
@@ -163,6 +168,7 @@ export async function submitIntake(input: ValidIntake, s: Services): Promise<Int
       sessionLocation,
       availability: input.availability,
       completedChecklist,
+      checklistLog,
       consent: { signedBy: input.consent.signatureName, signedAt: now },
       events,
     };
@@ -174,5 +180,6 @@ export async function submitIntake(input: ValidIntake, s: Services): Promise<Int
     submissionCode,
     cases: created.map((c) => ({ referenceCode: c.referenceCode, discipline: c.discipline, status: c.status })),
     alreadyOpen,
+    familyKey: s.config.auth.mode === 'demo' ? householdKey : undefined,
   };
 }

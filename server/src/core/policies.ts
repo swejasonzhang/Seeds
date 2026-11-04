@@ -18,7 +18,7 @@ export interface PriorityOptions {
   urgentBoostDays: number;
   siblingActiveBoostDays: number;
   mandatedBoostDays: number;
-  targetDays: Record<'ei' | 'cpse' | 'default', number>;
+  targetDays: Record<'ei' | 'cpse' | 'cse' | 'default', number>;
   /** SLA turns "at risk" when this many days or fewer remain. */
   atRiskWithinDays: number;
 }
@@ -28,7 +28,7 @@ export const DEFAULT_PRIORITY: PriorityOptions = {
   urgentBoostDays: 21,
   siblingActiveBoostDays: 5,
   mandatedBoostDays: 7,
-  targetDays: { ei: 30, cpse: 30, default: 45 },
+  targetDays: { ei: 30, cpse: 30, cse: 30, default: 45 },
   atRiskWithinDays: 7,
 };
 
@@ -68,7 +68,7 @@ export function assessPriority(input: PriorityInput, options: PriorityOptions = 
     factors.push('sibling-active');
     boost += options.siblingActiveBoostDays;
   }
-  if (input.fundingSource === 'ei' || input.fundingSource === 'cpse') {
+  if (input.fundingSource === 'ei' || input.fundingSource === 'cpse' || input.fundingSource === 'cse') {
     factors.push('mandated');
     boost += options.mandatedBoostDays;
   }
@@ -78,7 +78,9 @@ export function assessPriority(input: PriorityInput, options: PriorityOptions = 
       ? options.targetDays.ei
       : input.fundingSource === 'cpse'
         ? options.targetDays.cpse
-        : options.targetDays.default;
+        : input.fundingSource === 'cse'
+          ? options.targetDays.cse
+          : options.targetDays.default;
 
   return {
     queueSortKey: new Date(input.receivedAt.getTime() - boost * 24 * 3600 * 1000),

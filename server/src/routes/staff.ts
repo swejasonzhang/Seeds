@@ -7,18 +7,17 @@ import {
   weeklyWindowSchema,
   type CaseStatus,
   type DashboardDto,
-  type DayRoute,
   type Discipline,
-  type MeDto,
   type TherapistDetail,
 } from '@seeds/shared';
 import { Appointment, IntakeCase, Therapist, fromPoint, type AppointmentDoc, type CaseDoc, type TherapistDoc } from '../db/models.ts';
 import { buildDayRoute } from '../core/route.ts';
-import { addDays, dayOfWeek, isoDateInZone } from '../core/dates.ts';
+import { addDays, isoDateInZone } from '../core/dates.ts';
 import { today, type Services } from '../context.ts';
 import { notFound } from '../errors.ts';
-import { toAppointmentDto, toTherapistSummary, therapistName } from '../services/mappers.ts';
+import { toAppointmentDto, toTherapistSummary } from '../services/mappers.ts';
 import { autoMatch, bookCase } from '../services/scheduling.ts';
+import { therapistDayRoute } from '../services/dayRoute.ts';
 import type { TravelEstimator } from '../core/travel.ts';
 
 const objectId = z.string().refine((v) => mongoose.Types.ObjectId.isValid(v), 'Invalid id');
@@ -42,10 +41,6 @@ export function staffRoutes(
 ) {
   const r = express.Router();
 
-  r.get('/me', (req, res) => {
-    const body: MeDto = { name: req.user!.name, email: req.user!.email, roles: req.user!.roles, authMode: s.config.auth.mode };
-    res.json(body);
-  });
 
   // ----- whole-queue auto-match: propose a schedule for the top N waiting children in one click -----
 
@@ -118,46 +113,7 @@ export function staffRoutes(
     const t = await Therapist.findById(objectId.parse(req.params.id)).lean<TherapistDoc>();
     if (!t) throw notFound('Therapist');
     const date = z.iso.date().optional().parse(req.query.date) ?? today(s);
-    const day = dayOfWeek(date);
-    const appts = await Appointment.find({ therapistId: t._id, status: 'active', day, startsOn: { $lte: date } }).lean<AppointmentDoc[]>();
-    const occurring = appts.filter((a) => !a.endsOn || a.endsOn >= date);
-    const visits = occurring.map((a) => ({
-      id: a._id.toString(),
-      start: a.start,
-      end: a.end,
-      location: fromPoint(a.location?.point),
-      label: a.location?.label ?? 'Telehealth',
-      appt: a,
-    }));
-    const home = fromPoint(t.homeBase.point)!;
-    const estimator =
-      s.travel.source === 'azure-maps'
-        ? await s.travel.refine([home, ...visits.flatMap((v) => (v.location ? [v.location] : []))])
-        : s.travel.screening;
-    const route = buildDayRoute(home, 'Home base', visits, estimator);
-    const body: DayRoute = {
-      therapistId: t._id.toString(),
-      therapistName: therapistName(t),
-      date,
-      day,
-      stops: route.legs.map((l) => ({
-        appointmentId: l.visit.id,
-        start: l.visit.start,
-        end: l.visit.end,
-        label: l.visit.label,
-        setting: l.visit.appt.setting,
-        referenceCode: l.visit.appt.referenceCode,
-        childLabel: l.visit.appt.childLabel,
-        fromLabel: l.fromLabel,
-        driveMinutes: l.driveMinutes,
-        driveMiles: l.driveMiles,
-      })),
-      returnHomeMinutes: route.returnHomeMinutes,
-      totalDriveMinutes: route.totalDriveMinutes,
-      totalDriveMiles: route.totalDriveMiles,
-      travelSource: s.travel.source,
-    };
-    res.json(body);
+    res.json(await therapistDayRoute(t, date, s));
   });
 
   // ----- dashboard -----

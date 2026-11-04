@@ -75,6 +75,9 @@ const baseIntake = z.object({
     consent: z.object({
       agreed: z.literal(true, 'Consent is required to submit'),
       signatureName: z.string().trim().min(2, 'Type your full name to sign'),
+      /** Optional at intake; anything not acknowledged here becomes a to-do in the family portal. */
+      hipaaAcknowledged: z.boolean().optional(),
+      policyAgreed: z.boolean().optional(),
     }),
   });
 

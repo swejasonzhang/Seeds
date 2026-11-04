@@ -6,7 +6,7 @@
 # MONGODB_URI when Render prompts for it.
 services:
   - type: web
-    name: seeds-intake
+    name: demoseeds # → https://demoseeds.onrender.com (onrender subdomains are fixed at creation, so this is a new service)
     runtime: node # version from .node-version
     plan: free # sleeps after ~15 min idle; use "starter" or higher for always-on + horizontal scaling
     region: virginia # closest Render region to Long Island

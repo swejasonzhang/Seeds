@@ -1,7 +1,7 @@
 // Fictional demo data for Nassau County. Every name, phone (555-01xx) and address here is made up.
 import mongoose from 'mongoose';
-import { DISCIPLINE_SHORT, requiredChecklist, type CaseStatus, type ChecklistItem, type Discipline, type FundingSource, type SessionSetting, type WeeklyWindow } from '@seeds/shared';
-import { Appointment, Child, IntakeCase, Meta, Therapist, toPoint } from '../db/models.ts';
+import { DISCIPLINE_SHORT, journeyFor, requiredChecklist, type CaseStatus, type ChecklistItem, type Discipline, type FundingSource, type SessionSetting, type WeeklyWindow } from '@seeds/shared';
+import { Appointment, CaseDocument, Child, IntakeCase, Meta, Therapist, toPoint } from '../db/models.ts';
 import { ZIP_CENTROIDS } from '../services/zipCentroids.ts';
 import { addDays, isoDateInZone, nextOccurrence } from '../core/dates.ts';
 import { assessPriority } from '../core/policies.ts';
@@ -143,10 +143,11 @@ export async function seedDemoData(s: Services, childCount = 90): Promise<SeedSu
     });
 
     const disciplines: Discipline[] = chance(0.2) ? ['speech', 'ot'] : [chance(0.62) ? 'speech' : 'ot'];
+    // Programs the practice lists publicly (Information.txt §3): CPSE 3–5, CSE school-age, major insurance, private pay.
     const funding: FundingSource =
-      ageMonths < 36 ? (chance(0.75) ? 'ei' : 'insurance')
-        : ageMonths < 60 ? pick<FundingSource>(['cpse', 'cpse', 'insurance', 'insurance', 'medicaid'])
-          : pick<FundingSource>(['insurance', 'insurance', 'insurance', 'medicaid', 'private']);
+      ageMonths < 36 ? (chance(0.75) ? 'insurance' : 'private')
+        : ageMonths < 60 ? pick<FundingSource>(['cpse', 'cpse', 'cpse', 'insurance', 'insurance', 'private'])
+          : pick<FundingSource>(['cse', 'cse', 'insurance', 'insurance', 'insurance', 'private']);
     const setting: SessionSetting =
       ageMonths < 36 ? pick<SessionSetting>(['home', 'home', 'home', 'home', 'home', 'clinic'])
         : ageMonths < 60 ? pick<SessionSetting>(['home', 'home', 'community', 'community', 'clinic', 'telehealth'])
@@ -175,9 +176,30 @@ export async function seedDemoData(s: Services, childCount = 90): Promise<SeedSu
       const receivedDate = isoDateInZone(receivedAt, s.config.timeZone);
       const urgent = chance(0.08);
       const p = assessPriority({ receivedAt, receivedDate, dateOfBirth: dob, fundingSource: funding, urgentConcern: urgent, siblingActive: Boolean(sibling) }, s.config.priority);
+      // Everything done for cases past intake; partial, realistic progress for families still gathering paperwork.
+      const allSteps = journeyFor(funding).flatMap((p) => p.steps);
       const required = requiredChecklist(funding);
-      const completed: ChecklistItem[] =
-        destiny === 'pending-documents' ? required.filter((x, idx) => x === 'consent' || idx < required.length - 1 - Math.floor(r() * 2)) : required;
+      let completed: ChecklistItem[];
+      if (destiny === 'pending-documents' || destiny === 'needs-review') {
+        const districtSteps = allSteps.filter((x) => x.startsWith('district') || x === 'evaluation-consent' || x === 'iep-meeting');
+        const districtDone = districtSteps.slice(0, Math.floor(r() * districtSteps.length)); // never the IEP itself
+        completed = [
+          'consent',
+          ...(chance(0.6) ? (['hipaa-ack', 'office-policy'] as ChecklistItem[]) : []),
+          ...(chance(0.3) ? (['prior-reports'] as ChecklistItem[]) : []),
+          ...(funding === 'insurance' ? (['insurance-card', ...(chance(0.4) ? ['physician-referral'] : [])] as ChecklistItem[]) : []),
+          ...districtDone,
+        ];
+        // make sure at least one required step is still open
+        if (required.every((x) => completed.includes(x))) completed = completed.filter((x) => x !== 'office-policy' && x !== 'physician-referral');
+      } else {
+        completed = allSteps.filter((x) => x !== 'prior-reports' || chance(0.6));
+      }
+      const checklistLog = completed.map((item, i) => ({
+        item,
+        at: new Date(Math.min(now.getTime() - (completed.length - i) * 3_600_000, receivedAt.getTime() + i * 36 * 3_600_000)),
+        by: item === 'insurance-verified' ? 'Front desk (demo)' : `${guardianFirst} ${last} (parent)`,
+      }));
       const referenceCode = `${submissionCode}-${DISCIPLINE_SHORT[discipline]}`;
       const caseId = new mongoose.Types.ObjectId();
       const caseDoc: Record<string, unknown> = {
@@ -200,7 +222,7 @@ export async function seedDemoData(s: Services, childCount = 90): Promise<SeedSu
         priorityFactors: p.factors,
         targetStartBy: p.targetStartBy,
         fundingSource: funding,
-        referralSource: funding === 'ei' ? 'ei-official' : funding === 'cpse' ? 'school-district' : pick(['parent', 'pediatrician', 'pediatrician']),
+        referralSource: funding === 'cpse' || funding === 'cse' ? 'school-district' : pick(['parent', 'pediatrician', 'pediatrician']),
         concerns: pick(CONCERNS[discipline]),
         urgentConcern: urgent,
         insurance: funding === 'insurance' || funding === 'medicaid' ? { payer: funding === 'medicaid' ? 'NYS Medicaid' : pick(['Aetna', 'Cigna', 'Empire BCBS', 'UnitedHealthcare']), memberId: `DEMO${Math.floor(r() * 1e6)}` } : undefined,
@@ -211,6 +233,7 @@ export async function seedDemoData(s: Services, childCount = 90): Promise<SeedSu
         sessionsPerWeek: chance(0.15) ? 2 : 1,
         sessionMinutes: ageMonths < 36 ? 30 : chance(0.7) ? 45 : 60,
         completedChecklist: completed,
+        checklistLog,
         consent: { signedBy: `${guardianFirst} ${last}`, signedAt: receivedAt },
         events: [{ at: receivedAt, actor: 'Family (online intake)', kind: 'submitted', message: 'Referral submitted via online intake (demo data)' }],
       };
@@ -305,5 +328,8 @@ export async function seedIfEmpty(s: Services) {
 }
 
 export async function resetDatabase() {
-  await Promise.all([Child.deleteMany({}), IntakeCase.deleteMany({}), Therapist.deleteMany({}), Appointment.deleteMany({}), Meta.deleteMany({})]);
+  await Promise.all([Child.deleteMany({}), IntakeCase.deleteMany({}), Therapist.deleteMany({}), Appointment.deleteMany({}), Meta.deleteMany({}), CaseDocument.deleteMany({})]);
+  // uploaded file bytes (GridFS bucket "documents")
+  const db = mongoose.connection.db!;
+  await Promise.all(['documents.files', 'documents.chunks'].map((c) => db.collection(c).deleteMany({})));
 }
